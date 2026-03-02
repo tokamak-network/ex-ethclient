@@ -1,0 +1,3 @@
+[submodule "fixtures/ethereum-tests"]
+	path = fixtures/ethereum-tests
+	url = https://github.com/ethereum/tests.git

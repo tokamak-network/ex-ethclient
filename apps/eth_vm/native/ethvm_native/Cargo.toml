@@ -9,3 +9,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rustler = "0.36"
+revm = { version = "22", default-features = false, features = [
+    "std",
+    "optional_balance_check",
+    "optional_block_gas_limit",
+    "optional_no_base_fee",
+    "optional_eip3607",
+] }

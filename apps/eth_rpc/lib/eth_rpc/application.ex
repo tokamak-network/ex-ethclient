@@ -1,19 +1,27 @@
 defmodule EthRpc.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
-  @moduledoc false
+  @moduledoc """
+  OTP Application for the JSON-RPC server.
+
+  Starts a Bandit HTTP server when `start_server` config is true.
+  """
 
   use Application
 
   @impl true
+  @spec start(Application.start_type(), term()) ::
+          {:ok, pid()} | {:error, term()}
   def start(_type, _args) do
-    children = [
-      # Starts a worker by calling: EthRpc.Worker.start_link(arg)
-      # {EthRpc.Worker, arg}
-    ]
+    children =
+      if Application.get_env(:eth_rpc, :start_server, true) do
+        port = Application.get_env(:eth_rpc, :port, 8545)
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
+        [
+          {Bandit, plug: EthRpc.Router, port: port, scheme: :http}
+        ]
+      else
+        []
+      end
+
     opts = [strategy: :one_for_one, name: EthRpc.Supervisor]
     Supervisor.start_link(children, opts)
   end

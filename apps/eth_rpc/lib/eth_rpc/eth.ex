@@ -37,7 +37,8 @@ defmodule EthRpc.Eth do
     "web3_sha3" => :web3_sha3,
     "engine_forkchoiceUpdatedV3" => :engine_forkchoice_updated_v3,
     "engine_newPayloadV3" => :engine_new_payload_v3,
-    "engine_getPayloadV3" => :engine_get_payload_v3
+    "engine_getPayloadV3" => :engine_get_payload_v3,
+    "engine_exchangeCapabilities" => :engine_exchange_capabilities
   }
 
   @doc """
@@ -257,10 +258,15 @@ defmodule EthRpc.Eth do
   end
 
   @doc false
-  @spec engine_get_payload_v3(list()) ::
-          {:error, integer(), String.t()}
+  @spec engine_get_payload_v3(list()) :: rpc_result()
   def engine_get_payload_v3(params) do
     Engine.get_payload_v3(params)
+  end
+
+  @doc false
+  @spec engine_exchange_capabilities(list()) :: {:ok, list()}
+  def engine_exchange_capabilities(params) do
+    Engine.exchange_capabilities(params)
   end
 
   # -- Private helpers -------------------------------------------------------

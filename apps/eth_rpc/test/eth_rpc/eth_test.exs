@@ -363,7 +363,7 @@ defmodule EthRpc.EthTest do
   end
 
   describe "engine_ namespace" do
-    test "engine_forkchoiceUpdatedV3 returns SYNCING" do
+    test "engine_forkchoiceUpdatedV3 returns SYNCING when store unavailable" do
       assert {:ok, result} =
                Eth.handle("engine_forkchoiceUpdatedV3", [%{}])
 
@@ -371,16 +371,25 @@ defmodule EthRpc.EthTest do
       assert result["payloadId"] == nil
     end
 
-    test "engine_newPayloadV3 returns SYNCING" do
+    test "engine_newPayloadV3 returns INVALID for empty params" do
       assert {:ok, result} =
                Eth.handle("engine_newPayloadV3", [%{}])
 
-      assert result["status"] == "SYNCING"
+      # Empty map missing required fields returns INVALID
+      assert result["status"] == "INVALID"
     end
 
     test "engine_getPayloadV3 returns error" do
       assert {:error, -38001, "Unknown payload"} =
                Eth.handle("engine_getPayloadV3", [%{}])
+    end
+
+    test "engine_exchangeCapabilities returns supported methods" do
+      assert {:ok, methods} =
+               Eth.handle("engine_exchangeCapabilities", [])
+
+      assert is_list(methods)
+      assert "engine_forkchoiceUpdatedV3" in methods
     end
   end
 

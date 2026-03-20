@@ -2,7 +2,8 @@ defmodule EthRpc.Application do
   @moduledoc """
   OTP Application for the JSON-RPC server.
 
-  Starts a Bandit HTTP server when `start_server` config is true.
+  Starts a Bandit HTTP server, PayloadManager, and ForkChoice
+  GenServers when `start_server` config is true.
   """
 
   use Application
@@ -16,6 +17,8 @@ defmodule EthRpc.Application do
         port = Application.get_env(:eth_rpc, :port, 8545)
 
         [
+          EthRpc.PayloadManager,
+          EthRpc.ForkChoice,
           {Bandit, plug: EthRpc.Router, port: port, scheme: :http}
         ]
       else

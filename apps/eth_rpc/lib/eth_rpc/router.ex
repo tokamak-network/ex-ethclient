@@ -4,6 +4,7 @@ defmodule EthRpc.Router do
 
   Accepts POST requests at "/" with JSON-RPC 2.0 payloads.
   Supports both single requests and batch requests (arrays).
+  Applies JWT authentication for engine_ methods when configured.
   """
 
   use Plug.Router
@@ -16,17 +17,12 @@ defmodule EthRpc.Router do
   post "/" do
     with {:ok, body, conn} <- Plug.Conn.read_body(conn),
          {:ok, decoded} <- Jason.decode(body) do
-      case decoded do
-        params when is_list(params) ->
-          responses = Enum.map(params, &Handler.handle_request/1)
-          send_json(conn, 200, responses)
+      conn = maybe_auth_engine(conn, decoded)
 
-        params when is_map(params) ->
-          response = Handler.handle_request(params)
-          send_json(conn, 200, response)
-
-        _ ->
-          send_json(conn, 400, Handler.parse_error())
+      if conn.halted do
+        conn
+      else
+        handle_decoded(conn, decoded)
       end
     else
       {:error, %Jason.DecodeError{}} ->
@@ -40,6 +36,39 @@ defmodule EthRpc.Router do
   match _ do
     send_resp(conn, 404, "Not found")
   end
+
+  @spec handle_decoded(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  defp handle_decoded(conn, params) when is_list(params) do
+    responses = Enum.map(params, &Handler.handle_request/1)
+    send_json(conn, 200, responses)
+  end
+
+  defp handle_decoded(conn, params) when is_map(params) do
+    response = Handler.handle_request(params)
+    send_json(conn, 200, response)
+  end
+
+  defp handle_decoded(conn, _) do
+    send_json(conn, 400, Handler.parse_error())
+  end
+
+  @spec maybe_auth_engine(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  defp maybe_auth_engine(conn, decoded) do
+    if engine_request?(decoded) do
+      EthRpc.JwtAuth.call(conn, [])
+    else
+      conn
+    end
+  end
+
+  @spec engine_request?(term()) :: boolean()
+  defp engine_request?(%{"method" => "engine_" <> _}), do: true
+
+  defp engine_request?(list) when is_list(list) do
+    Enum.any?(list, &engine_request?/1)
+  end
+
+  defp engine_request?(_), do: false
 
   @spec send_json(Plug.Conn.t(), integer(), term()) :: Plug.Conn.t()
   defp send_json(conn, status, body) do

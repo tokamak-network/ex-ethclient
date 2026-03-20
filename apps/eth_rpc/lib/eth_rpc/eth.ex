@@ -176,9 +176,22 @@ defmodule EthRpc.Eth do
 
   @doc false
   @spec eth_send_raw_transaction(list()) ::
-          {:error, integer(), String.t()}
+          {:ok, String.t()} | {:error, integer(), String.t()}
+  def eth_send_raw_transaction([raw_hex | _rest]) when is_binary(raw_hex) do
+    with {:ok, raw_bytes} <- Hex.decode_data(raw_hex),
+         {:ok, tx_hash} <- submit_raw_transaction(raw_bytes) do
+      {:ok, Hex.encode_data(tx_hash)}
+    else
+      {:error, :invalid_hex} ->
+        {:error, -32602, "Invalid params: expected hex-encoded transaction"}
+
+      {:error, reason} ->
+        {:error, -32603, "Transaction rejected: #{inspect(reason)}"}
+    end
+  end
+
   def eth_send_raw_transaction(_params) do
-    {:error, -32603, "eth_sendRawTransaction not implemented yet"}
+    {:error, -32602, "Invalid params: expected [hex_data]"}
   end
 
   @doc false
@@ -251,6 +264,22 @@ defmodule EthRpc.Eth do
   end
 
   # -- Private helpers -------------------------------------------------------
+
+  @spec submit_raw_transaction(binary()) ::
+          {:ok, <<_::256>>} | {:error, term()}
+  defp submit_raw_transaction(raw_bytes) do
+    if chain_available?() do
+      EthChain.TxPipeline.submit_transaction(raw_bytes)
+    else
+      {:error, :chain_unavailable}
+    end
+  end
+
+  @spec chain_available?() :: boolean()
+  defp chain_available? do
+    pid = GenServer.whereis(EthChain.Mempool)
+    is_pid(pid) and Process.alive?(pid)
+  end
 
   @spec store() :: {module(), GenServer.server()}
   defp store do

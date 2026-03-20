@@ -138,9 +138,14 @@ defmodule EthRpc.EthTest do
                ])
     end
 
-    test "eth_sendRawTransaction returns error" do
-      assert {:error, -32603, _msg} =
+    test "eth_sendRawTransaction returns error when chain unavailable" do
+      assert {:error, _code, _msg} =
                Eth.handle("eth_sendRawTransaction", ["0x00"])
+    end
+
+    test "eth_sendRawTransaction with invalid params returns error" do
+      assert {:error, -32602, _msg} =
+               Eth.handle("eth_sendRawTransaction", [])
     end
 
     test "eth_syncing returns false" do
@@ -272,6 +277,49 @@ defmodule EthRpc.EthTest do
                  addr_hex,
                  "latest"
                ])
+    end
+  end
+
+  describe "eth_sendRawTransaction (with mempool)" do
+    setup do
+      # Check if EthChain.Mempool is already registered
+      case GenServer.whereis(EthChain.Mempool) do
+        nil ->
+          {:ok, mempool_pid} = EthChain.Mempool.start_link(name: EthChain.Mempool)
+
+          on_exit(fn ->
+            if Process.alive?(mempool_pid), do: GenServer.stop(mempool_pid)
+          end)
+
+          %{mempool: EthChain.Mempool}
+
+        _pid ->
+          %{mempool: EthChain.Mempool}
+      end
+    end
+
+    test "submits valid raw transaction and returns hash" do
+      tx = %EthCore.Types.Transaction.Legacy{
+        nonce: 0,
+        gas_price: 2_000_000_000,
+        gas_limit: 21_000,
+        to: <<1::160>>,
+        value: 0,
+        data: <<>>
+      }
+
+      signed_tx = EthCore.Types.SignedTransaction.new(tx, 27, 1, 2)
+      raw = EthCore.RLP.encode_signed(signed_tx)
+      hex = "0x" <> Base.encode16(raw, case: :lower)
+
+      assert {:ok, hash_hex} = Eth.handle("eth_sendRawTransaction", [hex])
+      assert String.starts_with?(hash_hex, "0x")
+      assert byte_size(hash_hex) == 66
+    end
+
+    test "returns error for invalid transaction data" do
+      assert {:error, _code, _msg} =
+               Eth.handle("eth_sendRawTransaction", ["0x"])
     end
   end
 

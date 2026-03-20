@@ -3,8 +3,7 @@ defmodule EthVm.Nif do
   EVM implementation using the Rust NIF backend.
 
   Delegates transaction execution to `EthVm.Native` and converts
-  results into `EthVm.Types` structs. Currently backed by mock
-  Rust code; will use revm in the future.
+  results into `EthVm.Types` structs. Backed by revm via Rust NIF.
   """
 
   @behaviour EthVm.Evm
@@ -16,8 +15,9 @@ defmodule EthVm.Nif do
   @doc """
   Executes a single signed transaction via the Rust NIF.
 
-  Extracts fields from the signed transaction, calls the appropriate
-  NIF function, and wraps the result in an `ExecutionResult`.
+  Uses the full execute_tx NIF when possible, which provides real
+  EVM execution via revm including bytecode execution, gas metering,
+  and state changes.
   """
   @spec execute_transaction(
           EthVm.Types.Environment.t(),
@@ -40,9 +40,9 @@ defmodule EthVm.Nif do
         execution_result = %ExecutionResult{
           success: Map.get(map, :success, false),
           gas_used: Map.get(map, :gas_used, 0),
-          gas_refunded: 0,
+          gas_refunded: Map.get(map, :gas_refunded, 0),
           output: Map.get(map, :output, <<>>),
-          logs: [],
+          logs: Map.get(map, :logs, []),
           error: nil
         }
 

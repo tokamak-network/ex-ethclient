@@ -2,13 +2,28 @@ defmodule EthVm.Native do
   @moduledoc """
   Rust NIF bindings for EVM execution.
 
-  Provides low-level access to the Rust-based EVM engine.
-  Currently returns mock results; will be backed by revm in the future.
+  Provides low-level access to the Rust-based EVM engine backed by revm.
   """
 
   use Rustler,
     otp_app: :eth_vm,
     crate: "ethvm_native"
+
+  @doc "Executes a transaction with the real EVM (revm)."
+  @spec execute_tx(
+          binary(),
+          binary(),
+          binary(),
+          non_neg_integer(),
+          binary(),
+          binary(),
+          binary(),
+          non_neg_integer(),
+          binary()
+        ) ::
+          {:ok, map()} | {:error, atom()}
+  def execute_tx(_from, _to, _value, _gas_limit, _gas_price, _data, _code, _nonce, _balance),
+    do: :erlang.nif_error(:nif_not_loaded)
 
   @doc "Executes a simple value transfer (no contract interaction)."
   @spec execute_simple_tx(

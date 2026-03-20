@@ -20,7 +20,8 @@ defmodule EthVm.NifTest do
       nonce: 0,
       gas_price: 1_000_000_000,
       gas_limit: 21_000,
-      to: <<1::160>>,
+      # Use address > 0x09 to avoid precompile addresses
+      to: <<0xBB::8, 0::152>>,
       value: 1_000_000_000_000_000_000,
       data: <<>>
     }

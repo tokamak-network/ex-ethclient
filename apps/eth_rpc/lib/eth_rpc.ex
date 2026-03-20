@@ -1,6 +1,9 @@
 defmodule EthRpc do
   @moduledoc """
-  Documentation for `EthRpc`.
+  JSON-RPC 2.0 server for the Ethereum execution client.
+
+  Provides an HTTP endpoint that handles eth_, net_, and web3_ namespace
+  methods following the Ethereum JSON-RPC specification.
   """
 
   @doc """
@@ -12,6 +15,7 @@ defmodule EthRpc do
       :world
 
   """
+  @spec hello() :: :world
   def hello do
     :world
   end

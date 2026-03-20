@@ -25,7 +25,8 @@ defmodule EthChain.MixProject do
   defp deps do
     [
       {:eth_core, in_umbrella: true},
-      {:eth_crypto, in_umbrella: true}
+      {:eth_crypto, in_umbrella: true},
+      {:eth_vm, in_umbrella: true}
     ]
   end
 end

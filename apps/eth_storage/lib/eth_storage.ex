@@ -1,18 +1,12 @@
 defmodule EthStorage do
   @moduledoc """
-  Documentation for `EthStorage`.
+  Ethereum storage layer for blocks, state, and trie data.
+
+  Provides a pluggable backend architecture with a high-level Store API
+  and a Merkle Patricia Trie implementation for state root computation.
   """
 
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> EthStorage.hello()
-      :world
-
-  """
-  def hello do
-    :world
-  end
+  @doc "Returns the default store process name."
+  @spec store_name() :: atom()
+  def store_name, do: EthStorage.Store
 end

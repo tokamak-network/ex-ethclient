@@ -5,12 +5,15 @@ defmodule Mix.Tasks.EthChain.Start do
   ## Usage
 
       mix eth_chain.start [--port PORT] [--rpc-port RPC_PORT] [--datadir DIR]
+                          [--rpc BOOL] [--bootnodes ENODES]
 
   ## Options
 
   - `--port` - P2P port (default: 30303)
   - `--rpc-port` - JSON-RPC HTTP port (default: 8545)
   - `--datadir` - Data directory (default: ./data)
+  - `--rpc` - Enable JSON-RPC server (default: true)
+  - `--bootnodes` - Comma-separated enode URLs
   """
 
   use Mix.Task
@@ -21,40 +24,54 @@ defmodule Mix.Tasks.EthChain.Start do
   def run(args) do
     {opts, _, _} =
       OptionParser.parse(args,
-        strict: [port: :integer, rpc_port: :integer, datadir: :string],
+        strict: [
+          port: :integer,
+          rpc_port: :integer,
+          datadir: :string,
+          rpc: :boolean,
+          bootnodes: :string
+        ],
         aliases: [p: :port, r: :rpc_port, d: :datadir]
       )
 
-    port = Keyword.get(opts, :port, 30303)
-    rpc_port = Keyword.get(opts, :rpc_port, 8545)
-    datadir = Keyword.get(opts, :datadir, "./data")
+    config = EthChain.Config.from_env(opts)
 
-    Application.put_env(:eth_net, :port, port)
-    Application.put_env(:eth_rpc, :port, rpc_port)
+    Application.put_env(:eth_net, :port, config.p2p_port)
+    Application.put_env(:eth_rpc, :port, config.rpc_port)
 
     Mix.Task.run("app.start")
 
-    store = EthStorage.Store
+    {:ok, _pid} = EthChain.NodeSupervisor.start_link(config)
 
-    case EthChain.Node.initialize(store) do
-      {:ok, head} ->
-        IO.puts("\n=== ex_ethclient Execution Client ===")
-        IO.puts("P2P port: #{port}")
-        IO.puts("RPC port: #{rpc_port}")
-        IO.puts("Data dir: #{datadir}")
-        IO.puts("Head block: ##{head.head_number}")
-        IO.puts("Head hash: 0x#{Base.encode16(head.head_hash, case: :lower)}")
-        IO.puts("\nNode running... (Ctrl+C to stop)\n")
+    head = fetch_head()
 
-      {:error, reason} ->
-        IO.puts("\nFailed to initialize node: #{inspect(reason)}")
-    end
+    Mix.shell().info("""
+
+    ====================================
+     ex_ethclient v0.1.0
+    ====================================
+     Chain ID:  #{config.chain_id}
+     Data dir:  #{config.datadir}
+     P2P port:  #{config.p2p_port}
+     RPC port:  #{config.rpc_port}
+     Head:      ##{inspect(head)}
+    ====================================
+    """)
 
     unless iex_running?() do
       Process.sleep(:infinity)
     end
   end
 
+  @spec fetch_head() :: map() | nil
+  defp fetch_head do
+    case EthChain.Node.chain_head(EthStorage.Store) do
+      {:ok, head} -> head
+      _ -> nil
+    end
+  end
+
+  @spec iex_running?() :: boolean()
   defp iex_running? do
     Code.ensure_loaded?(IEx) and IEx.started?()
   end

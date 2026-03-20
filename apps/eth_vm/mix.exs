@@ -26,7 +26,8 @@ defmodule EthVm.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:eth_core, in_umbrella: true}
+      {:eth_core, in_umbrella: true},
+      {:rustler, "~> 0.36.1", runtime: false}
     ]
   end
 end

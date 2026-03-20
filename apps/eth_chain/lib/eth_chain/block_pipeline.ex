@@ -1,7 +1,7 @@
 defmodule EthChain.BlockPipeline do
   @moduledoc "Processes incoming blocks from the network layer."
 
-  alias EthChain.{Chain, Mempool}
+  alias EthChain.{BlockExecutor, Chain, Mempool}
   alias EthCore.Types.Block
   alias EthStorage.BlockStore
 
@@ -48,6 +48,45 @@ defmodule EthChain.BlockPipeline do
     case process_new_block(block, store, opts) do
       {:ok, _hash} -> do_process_blocks(rest, store, opts, count + 1)
       {:error, _} = err -> err
+    end
+  end
+
+  @doc """
+  Processes a block with full state transition and root verification.
+
+  1. Fetches the parent header from storage
+  2. Executes the block and applies state transitions
+  3. Verifies the computed state_root matches the header state_root
+  4. Stores the block if valid
+  """
+  @spec process_with_state(Block.t(), GenServer.server(), keyword()) ::
+          {:ok, <<_::256>>} | {:error, term()}
+  def process_with_state(%Block{} = block, store, opts \\ []) do
+    evm_module = Keyword.get(opts, :evm, EthVm.Mock)
+    state_provider = Keyword.get(opts, :state_provider)
+
+    with {:ok, parent_header} <- fetch_parent_header(block, store),
+         {:ok, _result, computed_root} <-
+           BlockExecutor.execute_and_apply(
+             block,
+             parent_header,
+             evm_module,
+             state_provider,
+             store
+           ),
+         :ok <- verify_state_root(computed_root, block.header.state_root),
+         {:ok, block_hash} <- BlockStore.store_block(block, store),
+         :ok <- EthStorage.Store.set_latest_block_number(store, block.header.number) do
+      {:ok, block_hash}
+    end
+  end
+
+  @spec verify_state_root(<<_::256>>, <<_::256>>) :: :ok | {:error, atom()}
+  defp verify_state_root(computed, expected) do
+    if computed == expected do
+      :ok
+    else
+      {:error, :state_root_mismatch}
     end
   end
 

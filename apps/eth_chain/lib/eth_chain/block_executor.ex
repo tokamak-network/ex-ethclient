@@ -7,8 +7,9 @@ defmodule EthChain.BlockExecutor do
   verification.
   """
 
-  alias EthChain.BlockValidator
+  alias EthChain.{BlockValidator, StateManager}
   alias EthCore.Types.{Block, BlockHeader}
+  alias EthStorage.MPT.Trie
   alias EthVm.Types.{BlockExecutionResult, Environment}
 
   @doc """
@@ -51,6 +52,30 @@ defmodule EthChain.BlockExecutor do
       chain_id: 1,
       block_hash_lookup: nil
     }
+  end
+
+  @doc """
+  Executes a block and applies state transitions.
+  Returns execution result and new state root.
+
+  1. Executes the block via `execute_block/4`
+  2. Applies account updates from the result to the state trie
+  3. Returns the result and new state root hash
+  """
+  @spec execute_and_apply(
+          Block.t(),
+          BlockHeader.t(),
+          module(),
+          module(),
+          GenServer.server()
+        ) :: {:ok, BlockExecutionResult.t(), <<_::256>>} | {:error, term()}
+  def execute_and_apply(%Block{} = block, %BlockHeader{} = parent, evm_mod, state_mod, store) do
+    with {:ok, result} <- execute_block(block, parent, evm_mod, state_mod),
+         trie = Trie.new(),
+         {:ok, _trie, root} <-
+           StateManager.apply_account_updates(trie, result.account_updates, store) do
+      {:ok, result, root}
+    end
   end
 
   defp do_execute(block, evm_module, state_provider) do

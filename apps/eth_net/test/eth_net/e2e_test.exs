@@ -303,7 +303,9 @@ defmodule EthNet.E2ETest do
           Logger.info("E2E: Trying #{:inet.ntoa(node.ip)}:#{node.tcp_port}...")
 
           case try_full_connect(node, priv, pub) do
-            {:ok, status} -> {:halt, {:ok, node, status}}
+            {:ok, status} ->
+              {:halt, {:ok, node, status}}
+
             {:error, reason} ->
               Logger.info("E2E: Failed: #{inspect(reason)}")
               {:cont, {:error, reason}}

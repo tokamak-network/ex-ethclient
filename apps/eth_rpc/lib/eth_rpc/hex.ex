@@ -56,7 +56,8 @@ defmodule EthRpc.Hex do
       iex> EthRpc.Hex.decode_quantity("0x0")
       {:ok, 0}
   """
-  @spec decode_quantity(String.t()) :: {:ok, non_neg_integer()} | {:error, :invalid_hex}
+  @spec decode_quantity(String.t()) ::
+          {:ok, non_neg_integer()} | {:error, :invalid_hex}
   def decode_quantity("0x" <> hex) when byte_size(hex) > 0 do
     case Integer.parse(hex, 16) do
       {value, ""} -> {:ok, value}
@@ -77,7 +78,8 @@ defmodule EthRpc.Hex do
       iex> EthRpc.Hex.decode_data("0x")
       {:ok, <<>>}
   """
-  @spec decode_data(String.t()) :: {:ok, binary()} | {:error, :invalid_hex}
+  @spec decode_data(String.t()) ::
+          {:ok, binary()} | {:error, :invalid_hex}
   def decode_data("0x" <> hex) do
     # Pad to even length
     padded = if rem(byte_size(hex), 2) == 1, do: "0" <> hex, else: hex

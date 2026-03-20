@@ -61,8 +61,16 @@ defmodule EthRpc.RouterTest do
     test "returns array of responses" do
       body =
         Jason.encode!([
-          %{"jsonrpc" => "2.0", "method" => "eth_chainId", "id" => 1},
-          %{"jsonrpc" => "2.0", "method" => "eth_blockNumber", "id" => 2}
+          %{
+            "jsonrpc" => "2.0",
+            "method" => "eth_chainId",
+            "id" => 1
+          },
+          %{
+            "jsonrpc" => "2.0",
+            "method" => "eth_blockNumber",
+            "id" => 2
+          }
         ])
 
       conn =

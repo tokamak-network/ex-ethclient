@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ethereum": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@gskril/ethereum-mcp"]
+    }
+  }
+}

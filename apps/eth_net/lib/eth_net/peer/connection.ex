@@ -369,9 +369,92 @@ defmodule EthNet.Peer.Connection do
         Logger.info("Peer: Disconnect from #{:inet.ntoa(state.remote_ip)}: #{inspect(reason)}")
         {:stop, {:disconnected, reason}, state}
 
+      Eth68.eth_message?(code) ->
+        handle_eth_message(code, payload, state)
+
       true ->
         Logger.debug("Peer: Received message code=#{code} (#{byte_size(payload)} bytes)")
         {:ok, state}
+    end
+  end
+
+  defp handle_eth_message(code, payload, state) do
+    case Eth68.decode(code, payload) do
+      {:ok, {msg_type, msg}} ->
+        dispatch_eth_message(msg_type, msg, state)
+
+      {:error, reason} ->
+        Logger.warning("Peer: Failed to decode eth msg code=#{code}: #{inspect(reason)}")
+        {:ok, state}
+    end
+  end
+
+  defp dispatch_eth_message(:get_block_headers, msg, state) do
+    Logger.debug("Peer: GetBlockHeaders req=#{msg.request_id}")
+    # Respond with empty headers (we don't have blocks yet)
+    {resp_code, resp_payload} = Eth68.encode_block_headers(msg.request_id, [])
+
+    case send_frame(state, resp_code, resp_payload) do
+      {:ok, state} -> {:ok, state}
+      {:error, _reason} -> {:ok, state}
+    end
+  end
+
+  defp dispatch_eth_message(:block_headers, msg, state) do
+    Logger.debug("Peer: BlockHeaders req=#{msg.request_id}, count=#{length(msg.headers)}")
+    forward_to_sync(:handle_headers, [self(), msg.request_id, msg.headers])
+    {:ok, state}
+  end
+
+  defp dispatch_eth_message(:get_block_bodies, msg, state) do
+    Logger.debug("Peer: GetBlockBodies req=#{msg.request_id}")
+    # Respond with empty bodies (we don't have blocks yet)
+    {resp_code, resp_payload} = Eth68.encode_block_bodies(msg.request_id, [])
+
+    case send_frame(state, resp_code, resp_payload) do
+      {:ok, state} -> {:ok, state}
+      {:error, _reason} -> {:ok, state}
+    end
+  end
+
+  defp dispatch_eth_message(:block_bodies, msg, state) do
+    Logger.debug("Peer: BlockBodies req=#{msg.request_id}, count=#{length(msg.bodies)}")
+    forward_to_sync(:handle_bodies, [self(), msg.request_id, msg.bodies])
+    {:ok, state}
+  end
+
+  defp dispatch_eth_message(:new_block_hashes, msg, state) do
+    Logger.debug("Peer: NewBlockHashes count=#{length(msg)}")
+    forward_to_sync(:handle_new_block_hashes, [self(), msg])
+    {:ok, state}
+  end
+
+  defp dispatch_eth_message(:new_block, msg, state) do
+    Logger.debug("Peer: NewBlock TD=#{msg.total_difficulty}")
+    forward_to_sync(:handle_new_block, [self(), msg])
+    {:ok, state}
+  end
+
+  defp dispatch_eth_message(:transactions, _msg, state) do
+    Logger.debug("Peer: Transactions received (no mempool integration yet)")
+    {:ok, state}
+  end
+
+  defp dispatch_eth_message(:new_pooled_tx_hashes, msg, state) do
+    Logger.debug("Peer: NewPooledTransactionHashes count=#{length(msg)}")
+    {:ok, state}
+  end
+
+  defp dispatch_eth_message(msg_type, _msg, state) do
+    Logger.debug("Peer: Unhandled eth message: #{msg_type}")
+    {:ok, state}
+  end
+
+  defp forward_to_sync(function, args) do
+    try do
+      apply(EthNet.Sync.Manager, function, args)
+    rescue
+      _ -> :ok
     end
   end
 

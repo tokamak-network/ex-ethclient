@@ -131,11 +131,43 @@ defmodule EthRpc.Eth do
   end
 
   @doc false
-  @spec eth_call(list()) :: {:ok, String.t()}
+  @spec eth_call(list()) :: {:ok, String.t()} | {:error, integer(), String.t()}
+  def eth_call([call_obj | _rest]) when is_map(call_obj) do
+    call_params = parse_call_params(call_obj)
+    {_mod, store_name} = store()
+
+    case EthVm.CallExecutor.execute_call(call_params, store_name) do
+      {:ok, output} ->
+        {:ok, Hex.encode_data(output)}
+
+      {:error, :execution_reverted} ->
+        {:error, 3, "execution reverted"}
+
+      {:error, reason} ->
+        {:error, -32603, "Internal error: #{inspect(reason)}"}
+    end
+  end
+
   def eth_call(_params), do: {:ok, "0x"}
 
   @doc false
-  @spec eth_estimate_gas(list()) :: {:ok, String.t()}
+  @spec eth_estimate_gas(list()) :: {:ok, String.t()} | {:error, integer(), String.t()}
+  def eth_estimate_gas([call_obj | _rest]) when is_map(call_obj) do
+    call_params = parse_call_params(call_obj)
+    {_mod, store_name} = store()
+
+    case EthVm.GasEstimator.estimate_gas(call_params, store_name) do
+      {:ok, gas} ->
+        {:ok, Hex.encode_quantity(gas)}
+
+      {:error, :execution_reverted} ->
+        {:error, 3, "execution reverted"}
+
+      {:error, reason} ->
+        {:error, -32603, "Internal error: #{inspect(reason)}"}
+    end
+  end
+
   def eth_estimate_gas(_params), do: {:ok, "0x5208"}
 
   @doc false
@@ -391,6 +423,60 @@ defmodule EthRpc.Eth do
   @spec full_txs?(list()) :: boolean()
   defp full_txs?([_tag, true]), do: true
   defp full_txs?(_), do: false
+
+  @spec parse_call_params(map()) :: map()
+  defp parse_call_params(obj) when is_map(obj) do
+    %{
+      from: decode_address_field(obj, "from"),
+      to: decode_address_field(obj, "to"),
+      value: decode_quantity_field(obj, "value", 0),
+      data: decode_data_field(obj, "data"),
+      gas_price: decode_quantity_field(obj, "gasPrice", 0),
+      max_fee_per_gas: decode_quantity_field(obj, "maxFeePerGas", 0)
+    }
+  end
+
+  @spec decode_address_field(map(), String.t()) :: binary()
+  defp decode_address_field(obj, key) do
+    case Map.get(obj, key) do
+      nil ->
+        <<0::160>>
+
+      hex ->
+        case Hex.decode_data(hex) do
+          {:ok, bin} -> bin
+          _ -> <<0::160>>
+        end
+    end
+  end
+
+  @spec decode_quantity_field(map(), String.t(), non_neg_integer()) :: non_neg_integer()
+  defp decode_quantity_field(obj, key, default) do
+    case Map.get(obj, key) do
+      nil ->
+        default
+
+      hex ->
+        case Hex.decode_quantity(hex) do
+          {:ok, val} -> val
+          _ -> default
+        end
+    end
+  end
+
+  @spec decode_data_field(map(), String.t()) :: binary()
+  defp decode_data_field(obj, key) do
+    case Map.get(obj, key) do
+      nil ->
+        <<>>
+
+      hex ->
+        case Hex.decode_data(hex) do
+          {:ok, bin} -> bin
+          _ -> <<>>
+        end
+    end
+  end
 
   @spec fetch_code(binary()) :: {:ok, String.t()}
   defp fetch_code(code_hash) do

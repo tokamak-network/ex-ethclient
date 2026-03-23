@@ -8,8 +8,6 @@ defmodule EthStorage.Store do
 
   use GenServer
 
-  alias EthStorage.Backend.Memory
-
   # --- Public API ---
 
   @doc "Starts the Store GenServer."
@@ -201,9 +199,16 @@ defmodule EthStorage.Store do
   @impl true
   @spec init(keyword()) :: {:ok, map()} | {:stop, term()}
   def init(opts) do
-    backend = Keyword.get(opts, :backend, Memory)
+    default_backend = Application.get_env(:eth_storage, :backend, EthStorage.Backend.Memory)
+    default_backend_opts = Application.get_env(:eth_storage, :backend_opts, [])
 
-    case backend.init(opts) do
+    backend = Keyword.get(opts, :backend, default_backend)
+    backend_opts = Keyword.get(opts, :backend_opts, default_backend_opts)
+
+    # Merge top-level opts (e.g. :datadir) for backward compatibility
+    merged_opts = Keyword.merge(backend_opts, Keyword.drop(opts, [:name, :backend, :backend_opts]))
+
+    case backend.init(merged_opts) do
       {:ok, backend_state} ->
         {:ok, %{backend: backend, backend_state: backend_state}}
 

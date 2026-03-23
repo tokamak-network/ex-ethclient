@@ -12,7 +12,13 @@ defmodule EthStorage.Application do
   def start(_type, _args) do
     children =
       if Application.get_env(:eth_storage, :start_services, true) do
-        [{EthStorage.Store, [name: EthStorage.Store]}]
+        backend = Application.get_env(:eth_storage, :backend, EthStorage.Backend.Memory)
+        backend_opts = Application.get_env(:eth_storage, :backend_opts, [])
+
+        [
+          {EthStorage.Store,
+           [name: EthStorage.Store, backend: backend, backend_opts: backend_opts]}
+        ]
       else
         []
       end

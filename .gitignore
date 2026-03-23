@@ -21,3 +21,8 @@ erl_crash.dump
 
 # Node key (private key)
 /data/nodekey
+apps/eth_storage/native/rocks_native/target/
+apps/eth_vm/native/ethvm_native/target/
+apps/eth_vm/priv/
+apps/eth_storage/priv/
+.claude/worktrees/

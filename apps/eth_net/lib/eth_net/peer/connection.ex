@@ -547,25 +547,28 @@ defmodule EthNet.Peer.Connection do
   end
 
   defp trigger_sync(_remote_status) do
+    Logger.info("Peer: Attempting to trigger sync...")
+
     try do
-      case EthNet.Sync.Manager.status() do
+      sync_status = EthNet.Sync.Manager.status()
+      Logger.info("Peer: Sync manager status: #{inspect(sync_status.status)}")
+
+      case sync_status do
         %{status: :idle} ->
-          # Post-merge mainnet: ~20M+ blocks. Start with a reasonable target.
-          # The sync manager will discover the real head via peer responses.
           our_head = get_local_head()
-          # Request at least the next batch of blocks
           target = our_head + 192
           Logger.info("Peer: Triggering sync from block #{our_head} to #{target}")
           EthNet.Sync.Manager.start_sync(target)
 
         %{status: :syncing} ->
-          :ok
+          Logger.info("Peer: Already syncing, skipping trigger")
 
-        _ ->
-          :ok
+        other ->
+          Logger.info("Peer: Sync status #{inspect(other)}, skipping trigger")
       end
     catch
-      :exit, _ -> :ok
+      kind, reason ->
+        Logger.warning("Peer: Failed to trigger sync: #{kind} #{inspect(reason)}")
     end
   end
 

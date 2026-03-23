@@ -5,6 +5,10 @@ defmodule EthNet.Sync.Manager do
   Tracks sync status, pending header/body requests, and downloaded data.
   Orchestrates the flow: request headers -> validate -> request bodies ->
   assemble blocks -> repeat until target reached.
+
+  When the local head is far behind the target, the manager delegates to
+  `EthNet.Sync.SnapSync` for fast state download before switching to
+  full block-by-block sync.
   """
 
   use GenServer
@@ -12,8 +16,12 @@ defmodule EthNet.Sync.Manager do
   require Logger
 
   alias EthNet.Protocol.Eth68
+  alias EthNet.Sync.SnapSync
 
-  @type sync_status :: :idle | :syncing | :synced
+  # If we are this many blocks behind, use snap sync instead of full sync.
+  @snap_sync_threshold 1024
+
+  @type sync_status :: :idle | :snap_syncing | :syncing | :synced
 
   defstruct status: :idle,
             target_block: 0,
@@ -22,7 +30,8 @@ defmodule EthNet.Sync.Manager do
             pending_body_requests: %{},
             downloaded_headers: [],
             downloaded_bodies: [],
-            next_request_id: 1
+            next_request_id: 1,
+            snap_sync_pid: nil
 
   @doc "Starts the Sync Manager."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -30,10 +39,16 @@ defmodule EthNet.Sync.Manager do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc "Start syncing from current head to target block number."
-  @spec start_sync(non_neg_integer()) :: :ok
-  def start_sync(target_block) do
-    GenServer.cast(__MODULE__, {:start_sync, target_block})
+  @doc """
+  Start syncing from current head to target block number.
+
+  If the gap between current and target is larger than #{@snap_sync_threshold}
+  blocks and a `pivot_root` is provided, snap sync is used. Otherwise falls
+  back to full block-by-block sync.
+  """
+  @spec start_sync(non_neg_integer(), keyword()) :: :ok
+  def start_sync(target_block, opts \\ []) do
+    GenServer.cast(__MODULE__, {:start_sync, target_block, opts})
   end
 
   @doc "Returns current sync status."
@@ -89,6 +104,28 @@ defmodule EthNet.Sync.Manager do
   end
 
   @impl true
+  def handle_cast({:start_sync, target_block, opts}, state) do
+    gap = target_block - state.current_block
+    pivot_root = Keyword.get(opts, :pivot_root)
+
+    if gap >= @snap_sync_threshold and pivot_root != nil do
+      Logger.info("Sync: Gap is #{gap} blocks, using snap sync")
+      start_snap_sync(state, target_block, pivot_root)
+    else
+      Logger.info("Sync: Starting full sync to block #{target_block}")
+
+      state = %{
+        state
+        | status: :syncing,
+          target_block: target_block
+      }
+
+      send(self(), :request_headers)
+      {:noreply, state}
+    end
+  end
+
+  # Keep backward compatibility with the old 2-element cast
   def handle_cast({:start_sync, target_block}, state) do
     Logger.info("Sync: Starting sync to block #{target_block}")
 
@@ -195,6 +232,30 @@ defmodule EthNet.Sync.Manager do
     {:noreply, state}
   end
 
+  def handle_info(:check_snap_sync, %{status: :snap_syncing} = state) do
+    case snap_sync_status(state) do
+      :complete ->
+        Logger.info("Sync: Snap sync complete, switching to full sync")
+
+        state = %{
+          state
+          | status: :syncing,
+            snap_sync_pid: nil
+        }
+
+        send(self(), :request_headers)
+        {:noreply, state}
+
+      _other ->
+        Process.send_after(self(), :check_snap_sync, 1_000)
+        {:noreply, state}
+    end
+  end
+
+  def handle_info(:check_snap_sync, state) do
+    {:noreply, state}
+  end
+
   def handle_info(_msg, state) do
     {:noreply, state}
   end
@@ -210,5 +271,41 @@ defmodule EthNet.Sync.Manager do
     end
   catch
     :exit, _ -> nil
+  end
+
+  defp start_snap_sync(state, target_block, pivot_root) do
+    case SnapSync.start_link(name: SnapSync) do
+      {:ok, pid} ->
+        SnapSync.start_sync(SnapSync, target_block, pivot_root)
+        Process.send_after(self(), :check_snap_sync, 1_000)
+
+        {:noreply,
+         %{state | status: :snap_syncing, target_block: target_block, snap_sync_pid: pid}}
+
+      {:error, {:already_started, pid}} ->
+        SnapSync.start_sync(SnapSync, target_block, pivot_root)
+        Process.send_after(self(), :check_snap_sync, 1_000)
+
+        {:noreply,
+         %{state | status: :snap_syncing, target_block: target_block, snap_sync_pid: pid}}
+
+      {:error, reason} ->
+        Logger.warning("Sync: Failed to start snap sync: #{inspect(reason)}, falling back")
+
+        state = %{state | status: :syncing, target_block: target_block}
+        send(self(), :request_headers)
+        {:noreply, state}
+    end
+  end
+
+  defp snap_sync_status(state) do
+    if state.snap_sync_pid && Process.alive?(state.snap_sync_pid) do
+      info = SnapSync.status(SnapSync)
+      info.status
+    else
+      :complete
+    end
+  rescue
+    _ -> :complete
   end
 end

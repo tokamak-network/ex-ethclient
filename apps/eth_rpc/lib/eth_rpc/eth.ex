@@ -6,7 +6,7 @@ defmodule EthRpc.Eth do
   When the Store is unavailable, sensible defaults are returned.
   """
 
-  alias EthRpc.{Engine, Formatters, Hex}
+  alias EthRpc.{Engine, FilterManager, Formatters, Hex, LogQuery}
 
   @type rpc_result :: {:ok, term()} | {:error, integer(), String.t()}
 
@@ -35,6 +35,14 @@ defmodule EthRpc.Eth do
     "net_peerCount" => :net_peer_count,
     "web3_clientVersion" => :web3_client_version,
     "web3_sha3" => :web3_sha3,
+    "eth_getLogs" => :eth_get_logs,
+    "eth_newFilter" => :eth_new_filter,
+    "eth_newBlockFilter" => :eth_new_block_filter,
+    "eth_newPendingTransactionFilter" => :eth_new_pending_transaction_filter,
+    "eth_getFilterChanges" => :eth_get_filter_changes,
+    "eth_getFilterLogs" => :eth_get_filter_logs,
+    "eth_uninstallFilter" => :eth_uninstall_filter,
+    "eth_getProof" => :eth_get_proof,
     "engine_forkchoiceUpdatedV3" => :engine_forkchoice_updated_v3,
     "engine_newPayloadV3" => :engine_new_payload_v3,
     "engine_getPayloadV3" => :engine_get_payload_v3,
@@ -126,6 +134,27 @@ defmodule EthRpc.Eth do
 
   @doc false
   @spec eth_get_storage_at(list()) :: {:ok, String.t()}
+  def eth_get_storage_at([address_hex, slot_hex | _rest])
+      when is_binary(address_hex) and is_binary(slot_hex) do
+    zero_value = "0x" <> String.duplicate("0", 64)
+
+    with {:ok, address_bin} <- Hex.decode_data(address_hex),
+         {:ok, slot_bin} <- decode_storage_slot(slot_hex) do
+      case store_call(:get_storage_trie_node, [storage_key(address_bin, slot_bin)]) do
+        {:ok, nil} ->
+          {:ok, zero_value}
+
+        {:ok, value} when is_binary(value) ->
+          {:ok, Hex.encode_data(pad_to_32(value))}
+
+        _error ->
+          {:ok, zero_value}
+      end
+    else
+      _error -> {:ok, zero_value}
+    end
+  end
+
   def eth_get_storage_at(_params) do
     {:ok, "0x" <> String.duplicate("0", 64)}
   end
@@ -206,6 +235,146 @@ defmodule EthRpc.Eth do
   @doc false
   @spec eth_accounts(list()) :: {:ok, list()}
   def eth_accounts(_params), do: {:ok, []}
+
+  # -- Log & Filter methods --------------------------------------------------
+
+  @doc false
+  @spec eth_get_logs(list()) :: {:ok, [map()]} | {:error, integer(), String.t()}
+  def eth_get_logs([filter_obj | _rest]) when is_map(filter_obj) do
+    filter = parse_log_filter(filter_obj)
+
+    case store_available?() do
+      true ->
+        {_mod, name} = store()
+        LogQuery.query_logs(filter, name)
+
+      false ->
+        {:ok, []}
+    end
+  end
+
+  def eth_get_logs(_params) do
+    {:error, -32602, "Invalid params: expected [filter_object]"}
+  end
+
+  @doc false
+  @spec eth_new_filter(list()) :: {:ok, String.t()} | {:error, integer(), String.t()}
+  def eth_new_filter([filter_obj | _rest]) when is_map(filter_obj) do
+    filter = parse_log_filter(filter_obj)
+
+    if filter_manager_available?() do
+      FilterManager.new_filter(filter)
+    else
+      {:error, -32603, "Filter manager not available"}
+    end
+  end
+
+  def eth_new_filter(_params) do
+    {:error, -32602, "Invalid params: expected [filter_object]"}
+  end
+
+  @doc false
+  @spec eth_new_block_filter(list()) :: {:ok, String.t()} | {:error, integer(), String.t()}
+  def eth_new_block_filter(_params) do
+    if filter_manager_available?() do
+      FilterManager.new_block_filter()
+    else
+      {:error, -32603, "Filter manager not available"}
+    end
+  end
+
+  @doc false
+  @spec eth_new_pending_transaction_filter(list()) ::
+          {:ok, String.t()} | {:error, integer(), String.t()}
+  def eth_new_pending_transaction_filter(_params) do
+    if filter_manager_available?() do
+      FilterManager.new_pending_tx_filter()
+    else
+      {:error, -32603, "Filter manager not available"}
+    end
+  end
+
+  @doc false
+  @spec eth_get_filter_changes(list()) ::
+          {:ok, [term()]} | {:error, integer(), String.t()}
+  def eth_get_filter_changes([filter_id | _rest]) when is_binary(filter_id) do
+    if filter_manager_available?() do
+      case FilterManager.get_filter_changes(filter_id) do
+        {:ok, changes} -> {:ok, changes}
+        {:error, :not_found} -> {:error, -32000, "Filter not found"}
+      end
+    else
+      {:error, -32603, "Filter manager not available"}
+    end
+  end
+
+  def eth_get_filter_changes(_params) do
+    {:error, -32602, "Invalid params: expected [filter_id]"}
+  end
+
+  @doc false
+  @spec eth_get_filter_logs(list()) ::
+          {:ok, [term()]} | {:error, integer(), String.t()}
+  def eth_get_filter_logs([filter_id | _rest]) when is_binary(filter_id) do
+    if filter_manager_available?() do
+      case FilterManager.get_filter_logs(filter_id) do
+        {:ok, logs} -> {:ok, logs}
+        {:error, :not_found} -> {:error, -32000, "Filter not found"}
+      end
+    else
+      {:error, -32603, "Filter manager not available"}
+    end
+  end
+
+  def eth_get_filter_logs(_params) do
+    {:error, -32602, "Invalid params: expected [filter_id]"}
+  end
+
+  @doc false
+  @spec eth_uninstall_filter(list()) :: {:ok, boolean()}
+  def eth_uninstall_filter([filter_id | _rest]) when is_binary(filter_id) do
+    if filter_manager_available?() do
+      {:ok, FilterManager.uninstall_filter(filter_id)}
+    else
+      {:ok, false}
+    end
+  end
+
+  def eth_uninstall_filter(_params), do: {:ok, false}
+
+  # -- Proof methods --------------------------------------------------------
+
+  @doc false
+  @spec eth_get_proof(list()) :: {:ok, map()} | {:error, integer(), String.t()}
+  def eth_get_proof([address_hex, storage_keys, _block_tag | _rest])
+      when is_binary(address_hex) and is_list(storage_keys) do
+    with {:ok, address_bin} <- Hex.decode_data(address_hex) do
+      account_data = fetch_account_for_proof(address_bin)
+
+      storage_proofs =
+        Enum.map(storage_keys, fn key_hex ->
+          build_storage_proof(address_bin, key_hex)
+        end)
+
+      {:ok,
+       %{
+         "address" => Hex.encode_data(address_bin),
+         "accountProof" => account_data.proof,
+         "balance" => Hex.encode_quantity(account_data.balance),
+         "codeHash" => Hex.encode_data(account_data.code_hash),
+         "nonce" => Hex.encode_quantity(account_data.nonce),
+         "storageHash" => Hex.encode_data(account_data.storage_root),
+         "storageProof" => storage_proofs
+       }}
+    else
+      _error ->
+        {:error, -32602, "Invalid params: expected [address, keys, block]"}
+    end
+  end
+
+  def eth_get_proof(_params) do
+    {:error, -32602, "Invalid params: expected [address, storage_keys, block_tag]"}
+  end
 
   # -- net_ namespace --------------------------------------------------------
 
@@ -391,6 +560,178 @@ defmodule EthRpc.Eth do
   @spec full_txs?(list()) :: boolean()
   defp full_txs?([_tag, true]), do: true
   defp full_txs?(_), do: false
+
+  @spec filter_manager_available?() :: boolean()
+  defp filter_manager_available? do
+    pid = GenServer.whereis(EthRpc.FilterManager)
+    is_pid(pid) and Process.alive?(pid)
+  end
+
+  @spec parse_log_filter(map()) :: LogQuery.filter()
+  defp parse_log_filter(obj) do
+    filter = %{}
+
+    filter =
+      case Map.get(obj, "fromBlock") do
+        nil -> filter
+        tag -> put_block_number(filter, :from_block, tag)
+      end
+
+    filter =
+      case Map.get(obj, "toBlock") do
+        nil -> filter
+        tag -> put_block_number(filter, :to_block, tag)
+      end
+
+    filter =
+      case Map.get(obj, "address") do
+        nil ->
+          filter
+
+        addr when is_binary(addr) ->
+          case Hex.decode_data(addr) do
+            {:ok, bin} -> Map.put(filter, :address, bin)
+            _ -> filter
+          end
+
+        addrs when is_list(addrs) ->
+          decoded =
+            Enum.flat_map(addrs, fn a ->
+              case Hex.decode_data(a) do
+                {:ok, bin} -> [bin]
+                _ -> []
+              end
+            end)
+
+          Map.put(filter, :address, decoded)
+      end
+
+    filter =
+      case Map.get(obj, "topics") do
+        nil ->
+          filter
+
+        topics when is_list(topics) ->
+          decoded = Enum.map(topics, &decode_topic_filter/1)
+          Map.put(filter, :topics, decoded)
+      end
+
+    case Map.get(obj, "blockHash") do
+      nil -> filter
+      hash_hex ->
+        case Hex.decode_data(hash_hex) do
+          {:ok, bin} -> Map.put(filter, :block_hash, bin)
+          _ -> filter
+        end
+    end
+  end
+
+  @spec decode_topic_filter(term()) :: binary() | [binary()] | nil
+  defp decode_topic_filter(nil), do: nil
+
+  defp decode_topic_filter(topic) when is_binary(topic) do
+    case Hex.decode_data(topic) do
+      {:ok, bin} -> bin
+      _ -> nil
+    end
+  end
+
+  defp decode_topic_filter(topics) when is_list(topics) do
+    Enum.flat_map(topics, fn t ->
+      case Hex.decode_data(t) do
+        {:ok, bin} -> [bin]
+        _ -> []
+      end
+    end)
+  end
+
+  @spec put_block_number(map(), atom(), String.t()) :: map()
+  defp put_block_number(filter, _key, "latest"), do: filter
+  defp put_block_number(filter, key, "earliest"), do: Map.put(filter, key, 0)
+  defp put_block_number(filter, _key, "pending"), do: filter
+
+  defp put_block_number(filter, key, hex) when is_binary(hex) do
+    case Hex.decode_quantity(hex) do
+      {:ok, n} -> Map.put(filter, key, n)
+      _ -> filter
+    end
+  end
+
+  @spec decode_storage_slot(String.t()) :: {:ok, binary()} | {:error, term()}
+  defp decode_storage_slot(hex) do
+    case Hex.decode_data(hex) do
+      {:ok, bin} -> {:ok, pad_to_32(bin)}
+      error -> error
+    end
+  end
+
+  @spec storage_key(binary(), binary()) :: binary()
+  defp storage_key(address, slot) do
+    EthCrypto.Hash.keccak256(address <> slot)
+  end
+
+  @spec pad_to_32(binary()) :: binary()
+  defp pad_to_32(bin) when byte_size(bin) >= 32, do: binary_part(bin, 0, 32)
+
+  defp pad_to_32(bin) do
+    padding = 32 - byte_size(bin)
+    <<0::size(padding * 8)>> <> bin
+  end
+
+  @spec fetch_account_for_proof(binary()) :: map()
+  defp fetch_account_for_proof(address_bin) do
+    empty_code = EthCore.Types.Account.empty_code_hash()
+    empty_root = EthCore.Types.Account.empty_trie_root()
+
+    case store_call(:get_account, [address_bin]) do
+      {:ok, encoded} when is_binary(encoded) ->
+        account = :erlang.binary_to_term(encoded)
+
+        %{
+          nonce: account.nonce,
+          balance: account.balance,
+          code_hash: account.code_hash,
+          storage_root: account.storage_root,
+          proof: []
+        }
+
+      _other ->
+        %{
+          nonce: 0,
+          balance: 0,
+          code_hash: empty_code,
+          storage_root: empty_root,
+          proof: []
+        }
+    end
+  end
+
+  @spec build_storage_proof(binary(), String.t()) :: map()
+  defp build_storage_proof(address_bin, key_hex) do
+    zero_value = "0x" <> String.duplicate("0", 64)
+
+    case Hex.decode_data(key_hex) do
+      {:ok, slot_bin} ->
+        slot_padded = pad_to_32(slot_bin)
+        skey = storage_key(address_bin, slot_padded)
+
+        value =
+          case store_call(:get_storage_trie_node, [skey]) do
+            {:ok, nil} -> zero_value
+            {:ok, v} when is_binary(v) -> Hex.encode_data(pad_to_32(v))
+            _other -> zero_value
+          end
+
+        %{
+          "key" => key_hex,
+          "value" => value,
+          "proof" => []
+        }
+
+      _error ->
+        %{"key" => key_hex, "value" => zero_value, "proof" => []}
+    end
+  end
 
   @spec fetch_code(binary()) :: {:ok, String.t()}
   defp fetch_code(code_hash) do

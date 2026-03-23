@@ -90,6 +90,30 @@ defmodule EthRpc.TestStore do
     GenServer.call(server, {:put, :codes, code_hash, code})
   end
 
+  @spec get_receipt(GenServer.server(), binary(), non_neg_integer()) ::
+          {:ok, binary() | nil}
+  def get_receipt(server, block_hash, tx_index) do
+    key = {block_hash, tx_index}
+    GenServer.call(server, {:get, :receipts, key})
+  end
+
+  @spec put_receipt(GenServer.server(), binary(), non_neg_integer(), binary()) :: :ok
+  def put_receipt(server, block_hash, tx_index, data) do
+    key = {block_hash, tx_index}
+    GenServer.call(server, {:put, :receipts, key, data})
+  end
+
+  @spec get_storage_trie_node(GenServer.server(), binary()) ::
+          {:ok, binary() | nil}
+  def get_storage_trie_node(server, key) do
+    GenServer.call(server, {:get, :storage_trie_nodes, key})
+  end
+
+  @spec put_storage_trie_node(GenServer.server(), binary(), binary()) :: :ok
+  def put_storage_trie_node(server, key, value) do
+    GenServer.call(server, {:put, :storage_trie_nodes, key, value})
+  end
+
   # GenServer callbacks
 
   @impl true

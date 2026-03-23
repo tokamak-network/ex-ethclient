@@ -63,6 +63,22 @@ defmodule EthStorage.MPT.Trie do
     %{trie | root: ref, db: Map.merge(trie.db, Map.merge(new_db, new_db2))}
   end
 
+  @doc """
+  Gets the Merkle proof for a key.
+
+  Returns a list of RLP-encoded nodes from root to the leaf (or the point
+  where the key diverges). This proof can be used to verify that a given
+  key-value pair is (or is not) in the trie.
+  """
+  @spec get_proof(t(), binary()) :: {:ok, [binary()]}
+  def get_proof(%__MODULE__{root: <<>>}, _key), do: {:ok, []}
+
+  def get_proof(%__MODULE__{} = trie, key) do
+    nibbles = Encoding.to_nibbles(key)
+    proof_nodes = collect_proof_nodes(trie, trie.root, nibbles, [])
+    {:ok, Enum.reverse(proof_nodes)}
+  end
+
   @doc "Deletes a key from the trie."
   @spec delete(t(), binary()) :: t()
   def delete(%__MODULE__{root: <<>>} = trie, _key), do: trie
@@ -80,6 +96,48 @@ defmodule EthStorage.MPT.Trie do
         ref = store_node(trie, new_node)
         new_db2 = node_db_entries(new_node)
         %{trie | root: ref, db: Map.merge(trie.db, Map.merge(new_db, new_db2))}
+    end
+  end
+
+  # --- Internal: proof collection ---
+
+  defp collect_proof_nodes(_trie, <<>>, _nibbles, acc), do: acc
+
+  defp collect_proof_nodes(trie, ref, nibbles, acc) do
+    node = resolve_node(trie, ref)
+    encoded = encode_node(node)
+
+    case node do
+      :empty ->
+        acc
+
+      {:leaf, _path, _value} ->
+        [encoded | acc]
+
+      {:extension, path, child_ref} ->
+        path_len = length(path)
+
+        if Enum.take(nibbles, path_len) == path do
+          remaining = Enum.drop(nibbles, path_len)
+          collect_proof_nodes(trie, child_ref, remaining, [encoded | acc])
+        else
+          [encoded | acc]
+        end
+
+      {:branch, _children, _value} ->
+        case nibbles do
+          [] ->
+            [encoded | acc]
+
+          [nibble | rest] ->
+            child_ref = Node.branch_child(node, nibble)
+
+            if child_ref == <<>> do
+              [encoded | acc]
+            else
+              collect_proof_nodes(trie, child_ref, rest, [encoded | acc])
+            end
+        end
     end
   end
 

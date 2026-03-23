@@ -19,6 +19,7 @@ defmodule EthRpc.Application do
         [
           EthRpc.PayloadManager,
           EthRpc.ForkChoice,
+          EthRpc.FilterManager,
           {Bandit, plug: EthRpc.Router, port: port, scheme: :http}
         ]
       else

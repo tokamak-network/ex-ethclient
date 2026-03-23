@@ -3,6 +3,10 @@ defmodule EthNet.Peer.Connection do
   Manages a single TCP connection to a remote peer.
 
   Lifecycle: TCP connect → RLPx handshake → Hello exchange → Status exchange → active.
+
+  The Status exchange is fully non-blocking: after sending our Status message,
+  we switch to `active: :once` mode and handle the peer's Status response
+  asynchronously via `handle_info({:tcp, ...})`.
   """
 
   use GenServer, restart: :temporary
@@ -14,11 +18,14 @@ defmodule EthNet.Peer.Connection do
 
   @connect_timeout 5_000
   @handshake_timeout 10_000
+  @status_timeout 10_000
 
   @hello_code P2P.hello_code()
   @disconnect_code P2P.disconnect_code()
   @ping_code P2P.ping_code()
   @status_code Eth68.status_code()
+
+  @min_eth_version 66
 
   defstruct [
     :socket,
@@ -28,6 +35,7 @@ defmodule EthNet.Peer.Connection do
     :codec,
     :remote_hello,
     :remote_status,
+    :eth_version,
     state: :connecting,
     buffer: <<>>
   ]
@@ -120,26 +128,25 @@ defmodule EthNet.Peer.Connection do
             {:hello, hello_msg} = P2P.decode(code, payload)
             Logger.info("Peer: Hello from #{hello_msg.client_id} (v#{hello_msg.version})")
 
-            # Check for eth/68 capability
-            has_eth68? =
-              Enum.any?(hello_msg.capabilities, fn {name, ver} ->
-                name == "eth" and ver >= 68
-              end)
+            # Check for any eth/66+ capability
+            case highest_eth_capability(hello_msg) do
+              nil ->
+                Logger.warning("Peer: No eth/66+ capability, disconnecting")
+                send_disconnect(state, :useless_peer)
+                {:stop, :no_eth_capability, state}
 
-            if has_eth68? do
-              # Enable Snappy after Hello exchange (protocol version >= 5)
-              codec =
-                if hello_msg.version >= 5,
-                  do: FrameCodec.enable_snappy(state.codec),
-                  else: state.codec
+              eth_ver ->
+                Logger.info("Peer: Negotiated eth/#{eth_ver}")
 
-              state = %{state | remote_hello: hello_msg, state: :status, codec: codec}
-              send(self(), :send_status)
-              {:noreply, state}
-            else
-              Logger.warning("Peer: No eth/68 capability, disconnecting")
-              send_disconnect(state, :useless_peer)
-              {:stop, :no_eth68, state}
+                # Enable Snappy after Hello exchange (protocol version >= 5)
+                codec =
+                  if hello_msg.version >= 5,
+                    do: FrameCodec.enable_snappy(state.codec),
+                    else: state.codec
+
+                state = %{state | remote_hello: hello_msg, state: :status, codec: codec, eth_version: eth_ver}
+                send(self(), :send_status)
+                {:noreply, state}
             end
 
           {:ok, code, payload, state} when code == @disconnect_code ->
@@ -162,73 +169,26 @@ defmodule EthNet.Peer.Connection do
 
     case send_frame(state, msg_code, payload) do
       {:ok, state} ->
-        case recv_frame(state) do
-          {:ok, code, payload, state} when code == @status_code ->
-            {:ok, status} = Eth68.decode_status(payload)
-
-            Logger.info(
-              "Peer: eth/68 Status exchanged — remote head: 0x#{Base.encode16(status.best_hash, case: :lower) |> String.slice(0, 16)}..."
-            )
-
-            Logger.info(
-              "Peer: Remote network_id=#{status.network_id}, TD=#{status.total_difficulty}"
-            )
-
-            # Validate genesis hash and network_id
-            expected_genesis = EthNet.Chain.genesis_hash(:mainnet)
-            expected_network = EthNet.Chain.network_id(:mainnet)
-
-            cond do
-              status.network_id != expected_network ->
-                Logger.warning("Peer: Wrong network #{status.network_id}, expected #{expected_network}")
-                {:stop, {:wrong_network, status.network_id}, state}
-
-              status.genesis_hash != expected_genesis ->
-                Logger.warning("Peer: Wrong genesis hash, disconnecting")
-                {:stop, :wrong_genesis, state}
-
-              true ->
-                state = %{state | remote_status: status, state: :active}
-
-                # Notify the peer manager
-                send(EthNet.Peer.Manager, {:peer_connected, self(), state.remote_node_id, status})
-
-                # Trigger block sync if peer has higher blocks
-                trigger_sync(status)
-
-                # Switch to active mode for incoming messages
-                :inet.setopts(state.socket, active: :once)
-                {:noreply, state}
-            end
-
-          {:ok, code, payload, state} when code == @disconnect_code ->
-            {:disconnect, reason} = P2P.decode(code, payload)
-            Logger.warning("Peer: Received Disconnect during Status: #{inspect(reason)}")
-            {:stop, {:disconnected, reason}, state}
-
-          {:ok, code, _payload, state} ->
-            # Might receive Ping before Status
-            if code == @ping_code do
-              state = send_pong(state)
-              send(self(), :send_status)
-              {:noreply, %{state | state: :status}}
-            else
-              Logger.warning("Peer: Unexpected message #{code} during Status exchange")
-              {:stop, :unexpected_message, state}
-            end
-
-          {:error, reason} ->
-            Logger.warning("Peer: Failed to receive Status: #{inspect(reason)}")
-            {:stop, {:status_failed, reason}, state}
-        end
+        # Non-blocking: switch to active mode and wait for Status response
+        :inet.setopts(state.socket, active: :once)
+        Process.send_after(self(), :status_timeout, @status_timeout)
+        {:noreply, %{state | state: :awaiting_status}}
 
       {:error, reason} ->
         {:stop, {:send_status_failed, reason}, state}
     end
   end
 
-  @doc false
-  @impl true
+  def handle_info(:status_timeout, %{state: :awaiting_status} = state) do
+    Logger.warning("Peer: Status exchange timed out after #{@status_timeout}ms")
+    {:stop, :status_timeout, state}
+  end
+
+  def handle_info(:status_timeout, state) do
+    # Already past status phase, ignore
+    {:noreply, state}
+  end
+
   def handle_info({:send_eth_message, code, payload}, state) do
     case state.codec do
       nil ->
@@ -244,6 +204,28 @@ defmodule EthNet.Peer.Connection do
             Logger.warning("Failed to send eth message: #{inspect(reason)}")
             {:noreply, state}
         end
+    end
+  end
+
+  # Awaiting Status: handle incoming TCP data during Status exchange
+  def handle_info({:tcp, _socket, data}, %{state: :awaiting_status} = state) do
+    state = %{state | buffer: state.buffer <> data}
+
+    case FrameCodec.decode(state.codec, state.buffer) do
+      {:ok, msg_code, payload, remaining, codec} ->
+        state = %{state | codec: codec, buffer: remaining}
+        handle_status_response(msg_code, payload, state)
+
+      {:error, :insufficient_data} ->
+        :inet.setopts(state.socket, active: :once)
+        {:noreply, state}
+
+      {:error, :incomplete_frame} ->
+        :inet.setopts(state.socket, active: :once)
+        {:noreply, state}
+
+      {:error, reason} ->
+        {:stop, {:status_decode_error, reason}, state}
     end
   end
 
@@ -292,6 +274,15 @@ defmodule EthNet.Peer.Connection do
   end
 
   # --- Private helpers ---
+
+  @spec highest_eth_capability(map()) :: non_neg_integer() | nil
+  defp highest_eth_capability(remote_hello) do
+    remote_hello.capabilities
+    |> Enum.filter(fn {name, _} -> name == "eth" end)
+    |> Enum.map(fn {_, version} -> version end)
+    |> Enum.filter(&(&1 >= @min_eth_version))
+    |> Enum.max(fn -> nil end)
+  end
 
   defp do_handshake(state) do
     private_key = EthNet.NodeKey.private_key()
@@ -374,6 +365,65 @@ defmodule EthNet.Peer.Connection do
       {:error, reason} ->
         {:error, {:tcp_recv_failed, reason}}
     end
+  end
+
+  @spec handle_status_response(non_neg_integer(), binary(), %__MODULE__{}) ::
+          {:noreply, %__MODULE__{}} | {:stop, term(), %__MODULE__{}}
+  defp handle_status_response(@ping_code, _payload, state) do
+    Logger.debug("Peer: Received Ping during Status wait, sending Pong")
+    state = send_pong(state)
+    :inet.setopts(state.socket, active: :once)
+    {:noreply, state}
+  end
+
+  defp handle_status_response(@disconnect_code, payload, state) do
+    {:disconnect, reason} = P2P.decode(@disconnect_code, payload)
+    Logger.warning("Peer: Received Disconnect during Status: #{inspect(reason)}")
+    {:stop, {:disconnected, reason}, state}
+  end
+
+  defp handle_status_response(@status_code, payload, state) do
+    {:ok, status} = Eth68.decode_status(payload)
+
+    Logger.info(
+      "Peer: Status exchanged (eth/#{state.eth_version}) — remote head: 0x#{Base.encode16(status.best_hash, case: :lower) |> String.slice(0, 16)}..."
+    )
+
+    Logger.info(
+      "Peer: Remote network_id=#{status.network_id}, TD=#{status.total_difficulty}"
+    )
+
+    # Validate genesis hash and network_id
+    expected_genesis = EthNet.Chain.genesis_hash(:mainnet)
+    expected_network = EthNet.Chain.network_id(:mainnet)
+
+    cond do
+      status.network_id != expected_network ->
+        Logger.warning("Peer: Wrong network #{status.network_id}, expected #{expected_network}")
+        {:stop, {:wrong_network, status.network_id}, state}
+
+      status.genesis_hash != expected_genesis ->
+        Logger.warning("Peer: Wrong genesis hash, disconnecting")
+        {:stop, :wrong_genesis, state}
+
+      true ->
+        state = %{state | remote_status: status, state: :active}
+
+        # Notify the peer manager
+        send(EthNet.Peer.Manager, {:peer_connected, self(), state.remote_node_id, status})
+
+        # Trigger block sync if peer has higher blocks
+        trigger_sync(status)
+
+        # Switch to active mode for incoming messages
+        :inet.setopts(state.socket, active: :once)
+        {:noreply, state}
+    end
+  end
+
+  defp handle_status_response(code, _payload, state) do
+    Logger.warning("Peer: Unexpected message #{code} during Status exchange")
+    {:stop, :unexpected_message, state}
   end
 
   defp handle_active_data(state) do
@@ -514,8 +564,8 @@ defmodule EthNet.Peer.Connection do
         _ ->
           :ok
       end
-    rescue
-      _ -> :ok
+    catch
+      :exit, _ -> :ok
     end
   end
 

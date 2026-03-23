@@ -11,7 +11,7 @@ defmodule EthNet.Protocol.P2PTest do
     assert {:hello, msg} = P2P.decode(code, payload)
     assert msg.version == 5
     assert msg.client_id == "ex_ethclient/0.1.0"
-    assert msg.capabilities == [{"eth", 68}]
+    assert msg.capabilities == [{"eth", 66}, {"eth", 67}, {"eth", 68}]
     assert msg.listen_port == 30303
     assert msg.node_id == node_id
   end

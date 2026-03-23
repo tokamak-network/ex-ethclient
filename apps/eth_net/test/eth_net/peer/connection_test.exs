@@ -10,5 +10,6 @@ defmodule EthNet.Peer.ConnectionTest do
     assert conn.state == :connecting
     assert conn.buffer == <<>>
     assert conn.socket == nil
+    assert conn.eth_version == nil
   end
 end

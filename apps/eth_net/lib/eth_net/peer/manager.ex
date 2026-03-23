@@ -2,6 +2,10 @@ defmodule EthNet.Peer.Manager do
   @moduledoc """
   Manages peer connections. Listens for discovered peers from DiscV4
   and initiates TCP connections up to the maximum peer count.
+
+  Tracks recently failed peers to avoid reconnecting too quickly.
+  On peer disconnect, immediately attempts new connections instead of
+  waiting for the periodic timer.
   """
 
   use GenServer
@@ -12,10 +16,14 @@ defmodule EthNet.Peer.Manager do
 
   @max_peers 25
   @connect_interval 10_000
+  @retry_interval 2_000
+  @max_concurrent_attempts 5
+  @fail_cooldown_ms 60_000
 
   defstruct connected: %{},
             connecting: MapSet.new(),
-            max_peers: @max_peers
+            max_peers: @max_peers,
+            failed_peers: %{}
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -52,21 +60,49 @@ defmodule EthNet.Peer.Manager do
   end
 
   def handle_info({:peer_disconnected, pid}, state) do
-    case Map.get(state.connected, pid) do
-      %{ref: ref} ->
-        Process.demonitor(ref, [:flush])
+    {node_id, state} =
+      case Map.get(state.connected, pid) do
+        %{ref: ref, node_id: nid} ->
+          Process.demonitor(ref, [:flush])
+          {nid, state}
 
-      nil ->
-        :ok
-    end
+        nil ->
+          {nil, state}
+      end
 
     connected = Map.delete(state.connected, pid)
+
+    # Track the failed peer to avoid reconnecting too quickly
+    failed_peers =
+      if node_id do
+        Map.put(state.failed_peers, node_id, System.monotonic_time(:millisecond))
+      else
+        state.failed_peers
+      end
+
     Logger.info("PeerManager: Peer disconnected (#{map_size(connected)} active)")
-    {:noreply, %{state | connected: connected}}
+
+    state = %{state | connected: connected, failed_peers: failed_peers}
+
+    # Immediately try to connect to new peers instead of waiting
+    Process.send_after(self(), :retry_connect, @retry_interval)
+
+    {:noreply, state}
+  end
+
+  def handle_info(:retry_connect, state) do
+    state = attempt_connections(state)
+    {:noreply, state}
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
     connected = Map.delete(state.connected, pid)
+
+    # Trigger reconnect on crash too
+    if map_size(connected) < state.max_peers do
+      Process.send_after(self(), :retry_connect, @retry_interval)
+    end
+
     {:noreply, %{state | connected: connected}}
   end
 
@@ -95,10 +131,22 @@ defmodule EthNet.Peer.Manager do
 
   defp attempt_connections(state) do
     available_slots = state.max_peers - map_size(state.connected) - MapSet.size(state.connecting)
+    # Allow more concurrent attempts to find working peers faster
+    attempt_count = min(available_slots, @max_concurrent_attempts)
 
-    if available_slots <= 0 do
+    if attempt_count <= 0 do
       state
     else
+      # Clean up expired failed peer entries
+      now = System.monotonic_time(:millisecond)
+
+      failed_peers =
+        state.failed_peers
+        |> Enum.reject(fn {_id, ts} -> now - ts > @fail_cooldown_ms end)
+        |> Map.new()
+
+      state = %{state | failed_peers: failed_peers}
+
       # Get discovered peers from DiscV4
       discovered =
         try do
@@ -107,15 +155,19 @@ defmodule EthNet.Peer.Manager do
           _ -> []
         end
 
-      # Filter out already connected/connecting peers
+      # Filter out already connected/connecting/recently-failed peers
       connected_ids = MapSet.new(state.connected, fn {_pid, info} -> info.node_id end)
+      failed_ids = MapSet.new(Map.keys(failed_peers))
 
       candidates =
         discovered
         |> Enum.reject(fn node ->
-          MapSet.member?(connected_ids, node.id) or MapSet.member?(state.connecting, node.id)
+          MapSet.member?(connected_ids, node.id) or
+            MapSet.member?(state.connecting, node.id) or
+            MapSet.member?(failed_ids, node.id)
         end)
-        |> Enum.take(available_slots)
+        |> Enum.shuffle()
+        |> Enum.take(attempt_count)
 
       Enum.reduce(candidates, state, fn node, acc ->
         Logger.info(

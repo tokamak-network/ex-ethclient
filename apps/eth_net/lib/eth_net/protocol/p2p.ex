@@ -37,9 +37,10 @@ defmodule EthNet.Protocol.P2P do
   # --- Encoding ---
 
   @doc "Encodes a Hello message."
+  @spec encode_hello(binary(), non_neg_integer()) :: {non_neg_integer(), binary()}
   def encode_hello(node_id, listen_port \\ 0) do
-    # capabilities: [["eth", 68]]
-    capabilities = [["eth", 68]]
+    # Advertise eth/66, eth/67, and eth/68 to maximize peer compatibility
+    capabilities = [["eth", 66], ["eth", 67], ["eth", 68]]
 
     payload =
       ExRLP.encode([

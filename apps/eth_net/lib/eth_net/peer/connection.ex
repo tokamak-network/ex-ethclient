@@ -209,6 +209,26 @@ defmodule EthNet.Peer.Connection do
     end
   end
 
+  @doc false
+  @impl true
+  def handle_info({:send_eth_message, code, payload}, state) do
+    case state.codec do
+      nil ->
+        Logger.warning("Cannot send eth message: no codec established")
+        {:noreply, state}
+
+      _codec ->
+        case send_frame(state, code, payload) do
+          {:ok, state} ->
+            {:noreply, state}
+
+          {:error, reason} ->
+            Logger.warning("Failed to send eth message: #{inspect(reason)}")
+            {:noreply, state}
+        end
+    end
+  end
+
   # Active mode: handle incoming TCP data
   def handle_info({:tcp, _socket, data}, %{state: :active} = state) do
     state = %{state | buffer: state.buffer <> data}

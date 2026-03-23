@@ -6,6 +6,7 @@ defmodule EthChain.NodeSupervisor do
   1. Storage (EthStorage.Store)
   2. Mempool (EthChain.Mempool)
   3. Genesis initialization (one-time task)
+  4. Sync Manager (EthNet.Sync.Manager)
   """
 
   use Supervisor
@@ -26,7 +27,8 @@ defmodule EthChain.NodeSupervisor do
       [
         {EthStorage.Store, [name: EthStorage.Store, backend: backend_for(config)]},
         {EthChain.Mempool, [name: EthChain.Mempool]},
-        genesis_task()
+        genesis_task(),
+        {EthNet.Sync.Manager, []}
       ]
       |> maybe_add_rpc(config)
 

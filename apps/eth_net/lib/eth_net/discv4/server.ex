@@ -108,18 +108,29 @@ defmodule EthNet.DiscV4.Server do
   end
 
   def handle_info({:udp, _socket, from_ip, from_port, data}, state) do
-    case Packet.decode(data) do
-      {:ok, {type, msg, node_id, hash}} ->
-        state = handle_packet(type, msg, node_id, hash, from_ip, from_port, state)
-        {:noreply, state}
+    state =
+      try do
+        case Packet.decode(data) do
+          {:ok, {type, msg, node_id, hash}} ->
+            handle_packet(type, msg, node_id, hash, from_ip, from_port, state)
 
-      {:error, reason} ->
-        Logger.debug(
-          "DiscV4: Failed to decode packet from #{:inet.ntoa(from_ip)}:#{from_port}: #{inspect(reason)}"
-        )
+          {:error, reason} ->
+            Logger.debug(
+              "DiscV4: Failed to decode packet from #{:inet.ntoa(from_ip)}:#{from_port}: #{inspect(reason)}"
+            )
 
-        {:noreply, state}
-    end
+            state
+        end
+      rescue
+        e ->
+          Logger.warning(
+            "DiscV4: Error processing packet from #{:inet.ntoa(from_ip)}:#{from_port}: #{Exception.message(e)}"
+          )
+
+          state
+      end
+
+    {:noreply, state}
   end
 
   def handle_info({:ping_timeout, ip_port_key}, state) do
@@ -218,16 +229,13 @@ defmodule EthNet.DiscV4.Server do
       "DiscV4: Received NEIGHBOURS from #{:inet.ntoa(from_ip)}:#{from_port} with #{length(msg.nodes)} nodes"
     )
 
-    state =
-      Enum.reduce(msg.nodes, state, fn node, acc ->
-        if node.id != acc.public_key do
-          send_ping(acc, node.ip, node.udp_port, node.tcp_port || node.udp_port)
-        else
-          acc
-        end
-      end)
-
-    state
+    Enum.reduce(msg.nodes, state, fn node, acc ->
+      if node.id != acc.public_key and node.udp_port > 0 do
+        send_ping(acc, node.ip, node.udp_port, node.tcp_port || node.udp_port)
+      else
+        acc
+      end
+    end)
   end
 
   # --- Sending helpers ---

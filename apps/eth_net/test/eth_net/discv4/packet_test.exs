@@ -71,6 +71,54 @@ defmodule EthNet.DiscV4.PacketTest do
     end
   end
 
+  describe "IPv6-mapped IPv4 addresses" do
+    test "decodes nodes with IPv6-mapped IPv4 addresses in NEIGHBOURS", %{privkey: privkey} do
+      # Simulate a node that sends IPv6-mapped IPv4 (16 bytes: ::ffff:14.39.249.7)
+      ipv6_mapped = <<0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 14, 39, 249, 7>>
+      node_id = :crypto.strong_rand_bytes(64)
+
+      # Build a NEIGHBOURS packet manually with IPv6-mapped IP
+      node_list = [[ipv6_mapped, <<0x76, 0x5F>>, <<0x76, 0x5F>>, node_id]]
+      expiration = <<(System.system_time(:second) + 20)::big-unsigned-32>>
+      rlp_data = ExRLP.encode([node_list, expiration])
+
+      # Sign and wrap
+      type = 4
+      sign_payload = <<type, rlp_data::binary>>
+      sign_hash = EthCrypto.Hash.keccak256(sign_payload)
+      {:ok, {r, s, recovery_id}} = EthCrypto.Signature.sign(sign_hash, privkey)
+      signed_data = <<r::binary, s::binary, recovery_id, type, rlp_data::binary>>
+      hash = EthCrypto.Hash.keccak256(signed_data)
+      packet = hash <> signed_data
+
+      assert {:ok, {:neighbours, msg, _node_id, _hash}} = Packet.decode(packet)
+      assert length(msg.nodes) == 1
+      [node] = msg.nodes
+      assert node.ip == {14, 39, 249, 7}
+    end
+
+    test "skips nodes with unsupported IP formats in NEIGHBOURS", %{privkey: privkey} do
+      # Pure IPv6 address (16 bytes, not mapped)
+      ipv6 = <<0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>
+      node_id = :crypto.strong_rand_bytes(64)
+
+      node_list = [[ipv6, <<0x76, 0x5F>>, <<0x76, 0x5F>>, node_id]]
+      expiration = <<(System.system_time(:second) + 20)::big-unsigned-32>>
+      rlp_data = ExRLP.encode([node_list, expiration])
+
+      type = 4
+      sign_payload = <<type, rlp_data::binary>>
+      sign_hash = EthCrypto.Hash.keccak256(sign_payload)
+      {:ok, {r, s, recovery_id}} = EthCrypto.Signature.sign(sign_hash, privkey)
+      signed_data = <<r::binary, s::binary, recovery_id, type, rlp_data::binary>>
+      hash = EthCrypto.Hash.keccak256(signed_data)
+      packet = hash <> signed_data
+
+      assert {:ok, {:neighbours, msg, _node_id, _hash}} = Packet.decode(packet)
+      assert msg.nodes == []
+    end
+  end
+
   describe "packet integrity" do
     test "rejects tampered packets", %{privkey: privkey} do
       {:ok, data} =

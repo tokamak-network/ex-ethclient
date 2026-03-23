@@ -164,13 +164,26 @@ defmodule EthNet.DiscV4.Packet do
     [node_list, expiration | _] = ExRLP.decode(rlp_data)
 
     nodes =
-      Enum.map(node_list, fn [ip_bin, udp_port_bin, tcp_port_bin, id] ->
-        %EthNet.DiscV4.Node{
-          id: id,
-          ip: decode_ip(ip_bin),
-          udp_port: decode_integer(udp_port_bin),
-          tcp_port: decode_integer(tcp_port_bin)
-        }
+      node_list
+      |> Enum.flat_map(fn
+        [ip_bin, udp_port_bin, tcp_port_bin, id] ->
+          case decode_ip(ip_bin) do
+            nil ->
+              []
+
+            ip ->
+              [
+                %EthNet.DiscV4.Node{
+                  id: id,
+                  ip: ip,
+                  udp_port: decode_integer(udp_port_bin),
+                  tcp_port: decode_integer(tcp_port_bin)
+                }
+              ]
+          end
+
+        _ ->
+          []
       end)
 
     {:ok,
@@ -199,7 +212,10 @@ defmodule EthNet.DiscV4.Packet do
   end
 
   defp decode_ip(<<a, b, c, d>>), do: {a, b, c, d}
+  # IPv6-mapped IPv4: ::ffff:a.b.c.d
+  defp decode_ip(<<0::80, 0xFFFF::16, a, b, c, d>>), do: {a, b, c, d}
   defp decode_ip(<<>>), do: {0, 0, 0, 0}
+  defp decode_ip(_), do: nil
 
   defp encode_integer(0), do: <<>>
   defp encode_integer(n) when is_integer(n) and n > 0, do: :binary.encode_unsigned(n)

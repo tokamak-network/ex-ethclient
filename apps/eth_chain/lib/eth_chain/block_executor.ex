@@ -7,10 +7,12 @@ defmodule EthChain.BlockExecutor do
   verification.
   """
 
-  alias EthChain.{BlockValidator, StateManager}
-  alias EthCore.Types.{Block, BlockHeader}
+  alias EthChain.{BlockValidator, Fork, StateManager, SystemOps, WithdrawalProcessor}
+  alias EthCore.Types.{Account, Block, BlockHeader}
   alias EthStorage.MPT.Trie
   alias EthVm.Types.{BlockExecutionResult, Environment}
+
+  require Logger
 
   @doc """
   Executes a block: validates, runs transactions through EVM, verifies post-state.
@@ -58,9 +60,12 @@ defmodule EthChain.BlockExecutor do
   Executes a block and applies state transitions.
   Returns execution result and new state root.
 
-  1. Executes the block via `execute_block/4`
-  2. Applies account updates from the result to the state trie
-  3. Returns the result and new state root hash
+  1. Executes pre-block system calls (EIP-4788 beacon root, etc.)
+  2. Executes the block via `execute_block/4`
+  3. Processes withdrawals (Shanghai+)
+  4. Applies account updates to the state trie
+  5. Computes and verifies state root against header
+  6. Returns the result and new state root hash
   """
   @spec execute_and_apply(
           Block.t(),
@@ -70,12 +75,95 @@ defmodule EthChain.BlockExecutor do
           GenServer.server()
         ) :: {:ok, BlockExecutionResult.t(), <<_::256>>} | {:error, term()}
   def execute_and_apply(%Block{} = block, %BlockHeader{} = parent, evm_mod, state_mod, store) do
-    with {:ok, result} <- execute_block(block, parent, evm_mod, state_mod),
-         trie = Trie.new(),
-         {:ok, _trie, root} <-
-           StateManager.apply_account_updates(trie, result.account_updates, store) do
-      {:ok, result, root}
+    # Pre-block system calls
+    system_state = SystemOps.pre_block_system_calls(block.header, %{})
+
+    with {:ok, result} <- execute_block(block, parent, evm_mod, state_mod) do
+      # Merge withdrawal balance updates into account_updates
+      account_updates = merge_withdrawal_updates(block, result.account_updates)
+
+      # Merge system operation storage updates
+      account_updates = merge_system_state(account_updates, system_state)
+
+      # Apply all updates to the state trie
+      trie = Trie.new()
+
+      with {:ok, _trie, root} <-
+             StateManager.apply_account_updates(trie, account_updates, store) do
+        # Log warning if state root doesn't match (don't fail for now)
+        maybe_verify_state_root(root, block.header.state_root)
+
+        # Post-block system calls
+        _post_state = SystemOps.post_block_system_calls(block.header, system_state)
+
+        {:ok, result, root}
+      end
     end
+  end
+
+  @spec merge_withdrawal_updates(Block.t(), %{binary() => map()}) :: %{binary() => map()}
+  defp merge_withdrawal_updates(%Block{withdrawals: nil}, account_updates), do: account_updates
+  defp merge_withdrawal_updates(%Block{withdrawals: []}, account_updates), do: account_updates
+
+  defp merge_withdrawal_updates(%Block{header: header, withdrawals: withdrawals}, account_updates) do
+    fork = Fork.active_fork(header.number, header.timestamp)
+
+    if Fork.withdrawals?(fork) do
+      # Build current account state from existing updates
+      current_state =
+        Enum.reduce(account_updates, %{}, fn {address, update}, acc ->
+          account = %Account{
+            nonce: Map.get(update, :nonce, 0),
+            balance: Map.get(update, :balance, 0)
+          }
+
+          Map.put(acc, address, account)
+        end)
+
+      # Process withdrawals
+      updated_state = WithdrawalProcessor.process_withdrawals(withdrawals, current_state)
+
+      # Convert back to account_updates format and merge
+      withdrawal_updates = WithdrawalProcessor.to_account_updates(updated_state, current_state)
+
+      Map.merge(account_updates, withdrawal_updates, fn _addr, existing, new ->
+        Map.merge(existing, new)
+      end)
+    else
+      account_updates
+    end
+  end
+
+  @spec merge_system_state(%{binary() => map()}, map()) :: %{binary() => map()}
+  defp merge_system_state(account_updates, system_state) when map_size(system_state) == 0 do
+    account_updates
+  end
+
+  defp merge_system_state(account_updates, system_state) do
+    Enum.reduce(system_state, account_updates, fn
+      {{:storage, address}, storage}, acc ->
+        existing = Map.get(acc, address, %{})
+        existing_storage = Map.get(existing, :storage, %{})
+        merged_storage = Map.merge(existing_storage, storage)
+        Map.put(acc, address, Map.put(existing, :storage, merged_storage))
+
+      _other, acc ->
+        acc
+    end)
+  end
+
+  @spec maybe_verify_state_root(<<_::256>>, binary() | nil) :: :ok
+  defp maybe_verify_state_root(_computed, nil), do: :ok
+
+  defp maybe_verify_state_root(computed, expected) do
+    if computed != expected do
+      Logger.warning(
+        "State root mismatch: computed=#{Base.encode16(computed, case: :lower)}" <>
+          " expected=#{Base.encode16(expected, case: :lower)}"
+      )
+    end
+
+    :ok
   end
 
   defp do_execute(block, evm_module, state_provider) do

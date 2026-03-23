@@ -8,6 +8,8 @@ use revm::state::{AccountInfo, Bytecode};
 use revm::ExecuteEvm;
 use rustler::{Binary, Encoder, Env, NewBinary, NifResult, Term};
 
+mod state;
+
 mod atoms {
     rustler::atoms! {
         ok,
@@ -449,6 +451,221 @@ fn execute_call<'a>(
                 .unwrap();
             let result_map = result_map
                 .map_put(atoms::output().encode(env), make_binary(env, &output_bytes))
+                .unwrap();
+
+            Ok((atoms::ok(), result_map).encode(env))
+        }
+        Err(_e) => Ok((atoms::error(), atoms::execution_error()).encode(env)),
+    }
+}
+
+/// Execute a transaction with pre-loaded world state.
+///
+/// Accepts a binary blob containing serialized account state (from StateLoader),
+/// along with transaction parameters. The state is deserialized into an InMemoryDB
+/// before execution.
+///
+/// Input:
+///   state_data (binary), from (20 bytes), to (20 bytes or empty),
+///   value_bytes (big-endian U256), gas_limit (u64), gas_price_bytes (big-endian U256),
+///   data (calldata), nonce (u64)
+///
+/// Output:
+///   {:ok, %{gas_used, gas_refunded, success, output, logs, state_changes}}
+///   | {:error, reason}
+#[rustler::nif(schedule = "DirtyCpu")]
+fn execute_tx_with_state<'a>(
+    env: Env<'a>,
+    state_data: Binary<'a>,
+    from: Binary<'a>,
+    to: Binary<'a>,
+    value_bytes: Binary<'a>,
+    gas_limit: u64,
+    gas_price_bytes: Binary<'a>,
+    input_data: Binary<'a>,
+    tx_nonce: u64,
+) -> NifResult<Term<'a>> {
+    // Validate from address
+    if from.len() != 20 {
+        return Ok((atoms::error(), atoms::invalid_address()).encode(env));
+    }
+
+    // Parse addresses
+    let from_addr = Address::from_slice(from.as_slice());
+
+    let tx_kind = if to.is_empty() {
+        TxKind::Create
+    } else if to.len() == 20 {
+        TxKind::Call(Address::from_slice(to.as_slice()))
+    } else {
+        return Ok((atoms::error(), atoms::invalid_address()).encode(env));
+    };
+
+    let value = bytes_to_u256(value_bytes.as_slice());
+    let gas_price = bytes_to_u256(gas_price_bytes.as_slice());
+    let calldata = Bytes::copy_from_slice(input_data.as_slice());
+
+    // Build an in-memory database from pre-loaded state
+    let mut db = InMemoryDB::default();
+
+    if !state_data.is_empty() {
+        match state::load_state_into_db(state_data.as_slice(), &mut db) {
+            Ok(()) => {}
+            Err(e) => {
+                let error_msg = format!("state_load_error: {}", e);
+                return Ok((atoms::error(), error_msg).encode(env));
+            }
+        }
+    }
+
+    // Build the EVM context
+    let gas_price_u128: u128 = gas_price.try_into().unwrap_or(0u128);
+
+    let ctx = Context::mainnet()
+        .with_db(db)
+        .modify_cfg_chained(|cfg| {
+            cfg.spec = SpecId::CANCUN;
+            cfg.disable_balance_check = true;
+            cfg.disable_block_gas_limit = true;
+            cfg.disable_base_fee = true;
+            cfg.disable_eip3607 = true;
+            cfg.disable_nonce_check = true;
+        })
+        .modify_tx_chained(|tx: &mut TxEnv| {
+            tx.caller = from_addr;
+            tx.kind = tx_kind;
+            tx.value = value;
+            tx.gas_limit = gas_limit;
+            tx.gas_price = gas_price_u128;
+            tx.data = calldata;
+            tx.nonce = tx_nonce;
+            tx.chain_id = Some(1);
+        });
+
+    let mut evm = ctx.build_mainnet();
+
+    // Execute
+    match evm.replay() {
+        Ok(result_and_state) => {
+            let exec_result = &result_and_state.result;
+            let evm_state = &result_and_state.state;
+
+            let (is_success, gas_used_val, gas_refunded_val, output_bytes, log_list) =
+                match exec_result {
+                    ExecutionResult::Success {
+                        gas_used,
+                        gas_refunded,
+                        logs: result_logs,
+                        output,
+                        ..
+                    } => (
+                        true,
+                        *gas_used,
+                        *gas_refunded,
+                        output.data().to_vec(),
+                        result_logs.clone(),
+                    ),
+                    ExecutionResult::Revert { gas_used, output } => {
+                        (false, *gas_used, 0u64, output.to_vec(), vec![])
+                    }
+                    ExecutionResult::Halt { gas_used, .. } => {
+                        (false, *gas_used, 0u64, vec![], vec![])
+                    }
+                };
+
+            // Build logs list
+            let logs_term: Vec<Term<'a>> = log_list
+                .iter()
+                .map(|log| {
+                    let addr_term = make_binary(env, log.address.as_slice());
+                    let topics_term: Vec<Term<'a>> = log
+                        .data
+                        .topics()
+                        .iter()
+                        .map(|t| make_binary(env, t.as_slice()))
+                        .collect();
+                    let data_term = make_binary(env, log.data.data.as_ref());
+
+                    let log_map = Term::map_new(env);
+                    let log_map = log_map
+                        .map_put(atoms::address().encode(env), addr_term)
+                        .unwrap();
+                    let log_map = log_map
+                        .map_put(atoms::topics().encode(env), topics_term.encode(env))
+                        .unwrap();
+                    let log_map = log_map
+                        .map_put(atoms::data().encode(env), data_term)
+                        .unwrap();
+                    log_map
+                })
+                .collect();
+
+            // Build state_changes map
+            let state_changes_map = Term::map_new(env);
+            let state_changes_map =
+                evm_state
+                    .iter()
+                    .fold(state_changes_map, |acc, (addr, account)| {
+                        let addr_bin = make_binary(env, addr.as_slice());
+
+                        let acct_map = Term::map_new(env);
+                        let acct_map = acct_map
+                            .map_put(
+                                atoms::nonce().encode(env),
+                                account.info.nonce.encode(env),
+                            )
+                            .unwrap();
+
+                        let balance_bin =
+                            make_binary(env, &u256_to_be_bytes(&account.info.balance));
+                        let acct_map = acct_map
+                            .map_put(atoms::balance().encode(env), balance_bin)
+                            .unwrap();
+
+                        // Storage changes
+                        let storage_map = Term::map_new(env);
+                        let storage_map =
+                            account
+                                .storage
+                                .iter()
+                                .fold(storage_map, |sacc, (slot, sval)| {
+                                    let slot_bin = make_binary(env, &u256_to_be_bytes(slot));
+                                    let val_bin = make_binary(
+                                        env,
+                                        &u256_to_be_bytes(&sval.present_value()),
+                                    );
+                                    sacc.map_put(slot_bin, val_bin).unwrap_or(sacc)
+                                });
+
+                        let acct_map = acct_map
+                            .map_put(atoms::storage().encode(env), storage_map)
+                            .unwrap();
+
+                        acc.map_put(addr_bin, acct_map).unwrap_or(acc)
+                    });
+
+            // Build result map
+            let result_map = Term::map_new(env);
+            let result_map = result_map
+                .map_put(atoms::gas_used().encode(env), gas_used_val.encode(env))
+                .unwrap();
+            let result_map = result_map
+                .map_put(
+                    atoms::gas_refunded().encode(env),
+                    gas_refunded_val.encode(env),
+                )
+                .unwrap();
+            let result_map = result_map
+                .map_put(atoms::success().encode(env), is_success.encode(env))
+                .unwrap();
+            let result_map = result_map
+                .map_put(atoms::output().encode(env), make_binary(env, &output_bytes))
+                .unwrap();
+            let result_map = result_map
+                .map_put(atoms::logs().encode(env), logs_term.encode(env))
+                .unwrap();
+            let result_map = result_map
+                .map_put(atoms::state_changes().encode(env), state_changes_map)
                 .unwrap();
 
             Ok((atoms::ok(), result_map).encode(env))

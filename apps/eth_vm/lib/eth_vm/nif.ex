@@ -9,6 +9,7 @@ defmodule EthVm.Nif do
   @behaviour EthVm.Evm
 
   alias EthVm.Native
+  alias EthVm.StateLoader
   alias EthVm.Types.{BlockExecutionResult, ExecutionResult}
 
   @impl true
@@ -24,15 +25,15 @@ defmodule EthVm.Nif do
           EthCore.Types.SignedTransaction.t(),
           module()
         ) :: {:ok, ExecutionResult.t()} | {:error, term()}
-  def execute_transaction(_env, signed_tx, _state_provider) do
+  def execute_transaction(_env, signed_tx, state_provider) do
     tx = signed_tx.tx
     {from, to, value, gas_limit, gas_price, data} = extract_tx_fields(tx)
 
     result =
-      if data == <<>> do
-        Native.execute_simple_tx(from, to, value, gas_limit, gas_price)
+      if is_state_provider_available?(state_provider) do
+        execute_with_state(tx, from, to, value, gas_limit, gas_price, data, state_provider)
       else
-        Native.execute_call(from, to, data, value, gas_limit, gas_price)
+        execute_legacy(from, to, value, gas_limit, gas_price, data)
       end
 
     case result do
@@ -107,6 +108,62 @@ defmodule EthVm.Nif do
         {:ok, block_result}
     end
   end
+
+  # Executes a transaction using pre-loaded state from the state provider.
+  @spec execute_with_state(struct(), binary(), binary(), non_neg_integer(),
+          non_neg_integer(), non_neg_integer(), binary(), GenServer.server()) ::
+          {:ok, map()} | {:error, term()}
+  defp execute_with_state(tx, from, to, value, gas_limit, gas_price, data, store) do
+    nonce = Map.get(tx, :nonce, 0)
+    access_list = Map.get(tx, :access_list, [])
+
+    tx_info = %{from: from, to: to, access_list: access_list}
+
+    with {:ok, state_binary} <- StateLoader.load_tx_state(tx_info, store) do
+      value_bytes = <<value::unsigned-big-256>>
+      gas_price_bytes = <<gas_price::unsigned-big-256>>
+
+      Native.execute_tx_with_state(
+        state_binary,
+        from,
+        to,
+        value_bytes,
+        gas_limit,
+        gas_price_bytes,
+        data,
+        nonce
+      )
+    end
+  end
+
+  # Executes a transaction using the legacy NIF path (no state provider).
+  @spec execute_legacy(binary(), binary(), non_neg_integer(),
+          non_neg_integer(), non_neg_integer(), binary()) ::
+          {:ok, map()} | {:error, term()}
+  defp execute_legacy(from, to, value, gas_limit, gas_price, data) do
+    if data == <<>> do
+      Native.execute_simple_tx(from, to, value, gas_limit, gas_price)
+    else
+      Native.execute_call(from, to, data, value, gas_limit, gas_price)
+    end
+  end
+
+  # Checks whether a state provider (Store GenServer) is available.
+  @spec is_state_provider_available?(term()) :: boolean()
+  defp is_state_provider_available?(nil), do: false
+
+  defp is_state_provider_available?(provider) when is_atom(provider) do
+    case Process.whereis(provider) do
+      nil -> false
+      _pid -> true
+    end
+  end
+
+  defp is_state_provider_available?(provider) when is_pid(provider) do
+    Process.alive?(provider)
+  end
+
+  defp is_state_provider_available?(_), do: false
 
   # Extracts {from, to, value, gas_limit, gas_price, data} from a transaction.
   @spec extract_tx_fields(struct()) ::

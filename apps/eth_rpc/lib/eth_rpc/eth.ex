@@ -35,9 +35,30 @@ defmodule EthRpc.Eth do
     "net_peerCount" => :net_peer_count,
     "web3_clientVersion" => :web3_client_version,
     "web3_sha3" => :web3_sha3,
+    "engine_forkchoiceUpdatedV1" => :engine_forkchoice_updated_v1,
+    "engine_forkchoiceUpdatedV2" => :engine_forkchoice_updated_v2,
     "engine_forkchoiceUpdatedV3" => :engine_forkchoice_updated_v3,
+    "engine_forkchoiceUpdatedV4" => :engine_forkchoice_updated_v4,
+    "engine_newPayloadV1" => :engine_new_payload_v1,
+    "engine_newPayloadV2" => :engine_new_payload_v2,
     "engine_newPayloadV3" => :engine_new_payload_v3,
+    "engine_newPayloadV4" => :engine_new_payload_v4,
+    "engine_getPayloadV1" => :engine_get_payload_v1,
+    "engine_getPayloadV2" => :engine_get_payload_v2,
     "engine_getPayloadV3" => :engine_get_payload_v3,
+    "engine_getPayloadV4" => :engine_get_payload_v4,
+    "engine_getPayloadBodiesByHashV1" =>
+      :engine_get_payload_bodies_by_hash_v1,
+    "engine_getPayloadBodiesByHashV2" =>
+      :engine_get_payload_bodies_by_hash_v2,
+    "engine_getPayloadBodiesByRangeV1" =>
+      :engine_get_payload_bodies_by_range_v1,
+    "engine_getPayloadBodiesByRangeV2" =>
+      :engine_get_payload_bodies_by_range_v2,
+    "engine_getBlobsV1" => :engine_get_blobs_v1,
+    "engine_getClientVersionV1" => :engine_get_client_version_v1,
+    "engine_exchangeTransitionConfigurationV1" =>
+      :engine_exchange_transition_config_v1,
     "engine_exchangeCapabilities" => :engine_exchange_capabilities
   }
 
@@ -246,9 +267,39 @@ defmodule EthRpc.Eth do
   # -- engine_ namespace -----------------------------------------------------
 
   @doc false
+  @spec engine_forkchoice_updated_v1(list()) :: {:ok, map()}
+  def engine_forkchoice_updated_v1(params) do
+    Engine.forkchoice_updated_v1(params)
+  end
+
+  @doc false
+  @spec engine_forkchoice_updated_v2(list()) :: {:ok, map()}
+  def engine_forkchoice_updated_v2(params) do
+    Engine.forkchoice_updated_v2(params)
+  end
+
+  @doc false
   @spec engine_forkchoice_updated_v3(list()) :: {:ok, map()}
   def engine_forkchoice_updated_v3(params) do
     Engine.forkchoice_updated_v3(params)
+  end
+
+  @doc false
+  @spec engine_forkchoice_updated_v4(list()) :: {:ok, map()}
+  def engine_forkchoice_updated_v4(params) do
+    Engine.forkchoice_updated_v4(params)
+  end
+
+  @doc false
+  @spec engine_new_payload_v1(list()) :: {:ok, map()}
+  def engine_new_payload_v1(params) do
+    Engine.new_payload_v1(params)
+  end
+
+  @doc false
+  @spec engine_new_payload_v2(list()) :: {:ok, map()}
+  def engine_new_payload_v2(params) do
+    Engine.new_payload_v2(params)
   end
 
   @doc false
@@ -258,9 +309,75 @@ defmodule EthRpc.Eth do
   end
 
   @doc false
+  @spec engine_new_payload_v4(list()) :: {:ok, map()}
+  def engine_new_payload_v4(params) do
+    Engine.new_payload_v4(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_v1(list()) :: rpc_result()
+  def engine_get_payload_v1(params) do
+    Engine.get_payload_v1(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_v2(list()) :: rpc_result()
+  def engine_get_payload_v2(params) do
+    Engine.get_payload_v2(params)
+  end
+
+  @doc false
   @spec engine_get_payload_v3(list()) :: rpc_result()
   def engine_get_payload_v3(params) do
     Engine.get_payload_v3(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_v4(list()) :: rpc_result()
+  def engine_get_payload_v4(params) do
+    Engine.get_payload_v4(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_bodies_by_hash_v1(list()) :: {:ok, list()}
+  def engine_get_payload_bodies_by_hash_v1(params) do
+    Engine.get_payload_bodies_by_hash_v1(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_bodies_by_hash_v2(list()) :: {:ok, list()}
+  def engine_get_payload_bodies_by_hash_v2(params) do
+    Engine.get_payload_bodies_by_hash_v2(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_bodies_by_range_v1(list()) :: {:ok, list()}
+  def engine_get_payload_bodies_by_range_v1(params) do
+    Engine.get_payload_bodies_by_range_v1(params)
+  end
+
+  @doc false
+  @spec engine_get_payload_bodies_by_range_v2(list()) :: {:ok, list()}
+  def engine_get_payload_bodies_by_range_v2(params) do
+    Engine.get_payload_bodies_by_range_v2(params)
+  end
+
+  @doc false
+  @spec engine_get_blobs_v1(list()) :: {:ok, list()}
+  def engine_get_blobs_v1(params) do
+    Engine.get_blobs_v1(params)
+  end
+
+  @doc false
+  @spec engine_get_client_version_v1(list()) :: {:ok, list()}
+  def engine_get_client_version_v1(params) do
+    Engine.get_client_version_v1(params)
+  end
+
+  @doc false
+  @spec engine_exchange_transition_config_v1(list()) :: {:ok, map()}
+  def engine_exchange_transition_config_v1(params) do
+    Engine.exchange_transition_config_v1(params)
   end
 
   @doc false

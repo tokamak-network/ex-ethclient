@@ -8,9 +8,25 @@ defmodule EthRpc.Engine do
           {:ok, map()} | {:error, integer(), String.t()}
 
   @supported_methods [
+    "engine_forkchoiceUpdatedV1",
+    "engine_forkchoiceUpdatedV2",
     "engine_forkchoiceUpdatedV3",
+    "engine_forkchoiceUpdatedV4",
+    "engine_newPayloadV1",
+    "engine_newPayloadV2",
     "engine_newPayloadV3",
-    "engine_getPayloadV3"
+    "engine_newPayloadV4",
+    "engine_getPayloadV1",
+    "engine_getPayloadV2",
+    "engine_getPayloadV3",
+    "engine_getPayloadV4",
+    "engine_getPayloadBodiesByHashV1",
+    "engine_getPayloadBodiesByHashV2",
+    "engine_getPayloadBodiesByRangeV1",
+    "engine_getPayloadBodiesByRangeV2",
+    "engine_getBlobsV1",
+    "engine_getClientVersionV1",
+    "engine_exchangeTransitionConfigurationV1"
   ]
 
   @doc """
@@ -23,15 +39,165 @@ defmodule EthRpc.Engine do
     {:ok, @supported_methods}
   end
 
-  @doc """
-  engine_forkchoiceUpdatedV3
+  # -- forkchoiceUpdated versions ---------------------------------------------
 
-  Called by the consensus layer to update fork choice and
-  optionally trigger payload building.
-  """
+  @doc "engine_forkchoiceUpdatedV1 - no withdrawals in payload attributes."
+  @spec forkchoice_updated_v1(list()) :: {:ok, map()}
+  def forkchoice_updated_v1(params), do: do_forkchoice_updated(params, :v1)
+
+  @doc "engine_forkchoiceUpdatedV2 - adds withdrawals to payload attributes."
+  @spec forkchoice_updated_v2(list()) :: {:ok, map()}
+  def forkchoice_updated_v2(params), do: do_forkchoice_updated(params, :v2)
+
+  @doc "engine_forkchoiceUpdatedV3 - adds parentBeaconBlockRoot to payload attributes."
   @spec forkchoice_updated_v3(list()) :: {:ok, map()}
-  def forkchoice_updated_v3(params) do
+  def forkchoice_updated_v3(params), do: do_forkchoice_updated(params, :v3)
+
+  @doc "engine_forkchoiceUpdatedV4 - Prague fork support."
+  @spec forkchoice_updated_v4(list()) :: {:ok, map()}
+  def forkchoice_updated_v4(params), do: do_forkchoice_updated(params, :v4)
+
+  # -- newPayload versions ----------------------------------------------------
+
+  @doc "engine_newPayloadV1 - just execution payload."
+  @spec new_payload_v1(list()) :: {:ok, map()}
+  def new_payload_v1(params), do: do_new_payload(params, :v1)
+
+  @doc "engine_newPayloadV2 - adds blobVersionedHashes (no validation)."
+  @spec new_payload_v2(list()) :: {:ok, map()}
+  def new_payload_v2(params), do: do_new_payload(params, :v2)
+
+  @doc "engine_newPayloadV3 - adds parentBeaconBlockRoot + blob hash validation."
+  @spec new_payload_v3(list()) :: {:ok, map()}
+  def new_payload_v3(params), do: do_new_payload(params, :v3)
+
+  @doc "engine_newPayloadV4 - Prague fork support."
+  @spec new_payload_v4(list()) :: {:ok, map()}
+  def new_payload_v4(params), do: do_new_payload(params, :v4)
+
+  # -- getPayload versions ----------------------------------------------------
+
+  @doc "engine_getPayloadV1 - returns just executionPayload."
+  @spec get_payload_v1(list()) :: rpc_result()
+  def get_payload_v1(params), do: do_get_payload(params, :v1)
+
+  @doc "engine_getPayloadV2 - returns {executionPayload, blockValue}."
+  @spec get_payload_v2(list()) :: rpc_result()
+  def get_payload_v2(params), do: do_get_payload(params, :v2)
+
+  @doc "engine_getPayloadV3 - returns full payload with blobsBundle."
+  @spec get_payload_v3(list()) :: rpc_result()
+  def get_payload_v3(params), do: do_get_payload(params, :v3)
+
+  @doc "engine_getPayloadV4 - Prague fork extended format."
+  @spec get_payload_v4(list()) :: rpc_result()
+  def get_payload_v4(params), do: do_get_payload(params, :v4)
+
+  # -- getPayloadBodies -------------------------------------------------------
+
+  @doc """
+  engine_getPayloadBodiesByHashV1
+
+  Takes a list of block hashes and returns payload bodies (transactions + withdrawals)
+  for each. Returns null for unknown hashes.
+  """
+  @spec get_payload_bodies_by_hash_v1(list()) :: {:ok, list()}
+  def get_payload_bodies_by_hash_v1(params) do
+    do_get_payload_bodies_by_hash(params)
+  end
+
+  @doc "engine_getPayloadBodiesByHashV2 - same as V1."
+  @spec get_payload_bodies_by_hash_v2(list()) :: {:ok, list()}
+  def get_payload_bodies_by_hash_v2(params) do
+    do_get_payload_bodies_by_hash(params)
+  end
+
+  @doc """
+  engine_getPayloadBodiesByRangeV1
+
+  Takes a start block number and count, returns payload bodies for the range.
+  """
+  @spec get_payload_bodies_by_range_v1(list()) :: {:ok, list()}
+  def get_payload_bodies_by_range_v1(params) do
+    do_get_payload_bodies_by_range(params)
+  end
+
+  @doc "engine_getPayloadBodiesByRangeV2 - same as V1."
+  @spec get_payload_bodies_by_range_v2(list()) :: {:ok, list()}
+  def get_payload_bodies_by_range_v2(params) do
+    do_get_payload_bodies_by_range(params)
+  end
+
+  # -- getBlobsV1 -------------------------------------------------------------
+
+  @doc """
+  engine_getBlobsV1
+
+  Takes a list of versioned hashes. Returns list of BlobAndProof or null.
+  Currently a stub that returns null for all hashes.
+  """
+  @spec get_blobs_v1(list()) :: {:ok, list()}
+  def get_blobs_v1([hashes | _]) when is_list(hashes) do
+    {:ok, Enum.map(hashes, fn _hash -> nil end)}
+  end
+
+  def get_blobs_v1(_), do: {:ok, []}
+
+  # -- getClientVersionV1 -----------------------------------------------------
+
+  @doc """
+  engine_getClientVersionV1
+
+  Returns client identification information.
+  """
+  @spec get_client_version_v1(list()) :: {:ok, list()}
+  def get_client_version_v1(_params) do
+    {:ok,
+     [
+       %{
+         "code" => "EE",
+         "name" => "ExEthclient",
+         "version" => "0.1.0",
+         "commit" => "0x0000000000000000"
+       }
+     ]}
+  end
+
+  # -- exchangeTransitionConfigurationV1 --------------------------------------
+
+  @doc """
+  engine_exchangeTransitionConfigurationV1
+
+  Post-merge: echoes back the provided transition configuration.
+  """
+  @spec exchange_transition_config_v1(list()) :: {:ok, map()}
+  def exchange_transition_config_v1([config | _]) when is_map(config) do
+    {:ok,
+     %{
+       "terminalTotalDifficulty" =>
+         Map.get(config, "terminalTotalDifficulty", "0x0"),
+       "terminalBlockHash" =>
+         Map.get(config, "terminalBlockHash", Hex.encode_data(<<0::256>>)),
+       "terminalBlockNumber" =>
+         Map.get(config, "terminalBlockNumber", "0x0")
+     }}
+  end
+
+  def exchange_transition_config_v1(_params) do
+    {:ok,
+     %{
+       "terminalTotalDifficulty" => "0x0",
+       "terminalBlockHash" => Hex.encode_data(<<0::256>>),
+       "terminalBlockNumber" => "0x0"
+     }}
+  end
+
+  # --- Shared core implementations ---
+
+  @spec do_forkchoice_updated(list(), atom()) :: {:ok, map()}
+  defp do_forkchoice_updated(params, version) do
     {fc_state, payload_attrs} = parse_fcu_params(params)
+    payload_attrs = sanitize_payload_attrs(payload_attrs, version)
     head_hash = decode_hash_field(fc_state["headBlockHash"])
     safe_hash = decode_hash_field(fc_state["safeBlockHash"])
     finalized_hash = decode_hash_field(fc_state["finalizedBlockHash"])
@@ -49,13 +215,21 @@ defmodule EthRpc.Engine do
     end
   end
 
-  @doc """
-  engine_newPayloadV3
+  @spec sanitize_payload_attrs(map() | nil, atom()) :: map() | nil
+  defp sanitize_payload_attrs(nil, _version), do: nil
 
-  Called by consensus layer to validate and execute a new block.
-  """
-  @spec new_payload_v3(list()) :: {:ok, map()}
-  def new_payload_v3(params) do
+  defp sanitize_payload_attrs(attrs, :v1) do
+    Map.drop(attrs, ["withdrawals", "parentBeaconBlockRoot"])
+  end
+
+  defp sanitize_payload_attrs(attrs, :v2) do
+    Map.delete(attrs, "parentBeaconBlockRoot")
+  end
+
+  defp sanitize_payload_attrs(attrs, _version), do: attrs
+
+  @spec do_new_payload(list(), atom()) :: {:ok, map()}
+  defp do_new_payload(params, _version) do
     with {:ok, payload_map} <- extract_payload(params),
          {:ok, block} <- PayloadParser.parse_execution_payload(payload_map),
          {:ok, parent} <- lookup_parent(block) do
@@ -69,16 +243,11 @@ defmodule EthRpc.Engine do
     end
   end
 
-  @doc """
-  engine_getPayloadV3
-
-  Retrieves a payload that was started via forkchoiceUpdated.
-  """
-  @spec get_payload_v3(list()) :: {:ok, map()} | {:error, integer(), String.t()}
-  def get_payload_v3(params) do
+  @spec do_get_payload(list(), atom()) :: rpc_result()
+  defp do_get_payload(params, version) do
     with {:ok, payload_id} <- parse_payload_id(params),
          {:ok, payload_data} <- fetch_payload(payload_id) do
-      build_get_payload_response(payload_data)
+      build_versioned_get_payload_response(payload_data, version)
     else
       {:error, :not_found} ->
         {:error, -38001, "Unknown payload"}
@@ -88,7 +257,143 @@ defmodule EthRpc.Engine do
     end
   end
 
-  # --- Private helpers ---
+  @spec build_versioned_get_payload_response(map(), atom()) :: {:ok, map()}
+  defp build_versioned_get_payload_response(payload_data, :v1) do
+    payload_map = build_execution_payload(payload_data)
+    {:ok, %{"executionPayload" => payload_map}}
+  end
+
+  defp build_versioned_get_payload_response(payload_data, :v2) do
+    payload_map = build_execution_payload(payload_data)
+
+    {:ok,
+     %{
+       "executionPayload" => payload_map,
+       "blockValue" => "0x0"
+     }}
+  end
+
+  defp build_versioned_get_payload_response(payload_data, version)
+       when version in [:v3, :v4] do
+    payload_map = build_execution_payload(payload_data)
+
+    {:ok,
+     %{
+       "executionPayload" => payload_map,
+       "blockValue" => "0x0",
+       "blobsBundle" => %{
+         "commitments" => [],
+         "proofs" => [],
+         "blobs" => []
+       },
+       "shouldOverrideBuilder" => false
+     }}
+  end
+
+  @spec do_get_payload_bodies_by_hash(list()) :: {:ok, list()}
+  defp do_get_payload_bodies_by_hash([hashes | _]) when is_list(hashes) do
+    store = store_server()
+
+    bodies =
+      Enum.map(hashes, fn hash_hex ->
+        with {:ok, hash_bin} <- Hex.decode_data(hash_hex),
+             {:ok, block} when not is_nil(block) <-
+               fetch_block_from_store(hash_bin, store) do
+          format_payload_body(block)
+        else
+          _ -> nil
+        end
+      end)
+
+    {:ok, bodies}
+  end
+
+  defp do_get_payload_bodies_by_hash(_), do: {:ok, []}
+
+  @spec do_get_payload_bodies_by_range(list()) :: {:ok, list()}
+  defp do_get_payload_bodies_by_range([start_hex, count_hex | _]) do
+    with {:ok, start_num} <- Hex.decode_quantity(start_hex),
+         {:ok, count} <- Hex.decode_quantity(count_hex) do
+      store = store_server()
+
+      bodies =
+        Enum.map(start_num..(start_num + count - 1)//1, fn num ->
+          case fetch_block_by_number_from_store(num, store) do
+            {:ok, block} when not is_nil(block) ->
+              format_payload_body(block)
+
+            _ ->
+              nil
+          end
+        end)
+
+      {:ok, bodies}
+    else
+      _ -> {:ok, []}
+    end
+  end
+
+  defp do_get_payload_bodies_by_range(_), do: {:ok, []}
+
+  @spec format_payload_body(term()) :: map()
+  defp format_payload_body(block) do
+    %{
+      "transactions" => format_body_transactions(block),
+      "withdrawals" => format_body_withdrawals(block)
+    }
+  end
+
+  @spec format_body_transactions(term()) :: list()
+  defp format_body_transactions(%{transactions: txs}) when is_list(txs) do
+    Enum.map(txs, fn
+      tx when is_binary(tx) -> Hex.encode_data(tx)
+      _tx -> "0x"
+    end)
+  end
+
+  defp format_body_transactions(_), do: []
+
+  @spec format_body_withdrawals(term()) :: list() | nil
+  defp format_body_withdrawals(%{withdrawals: ws}) when is_list(ws) do
+    Enum.map(ws, fn w ->
+      %{
+        "index" => Hex.encode_quantity(w.index),
+        "validatorIndex" => Hex.encode_quantity(w.validator_index),
+        "address" => Hex.encode_data(w.address),
+        "amount" => Hex.encode_quantity(w.amount)
+      }
+    end)
+  end
+
+  defp format_body_withdrawals(_), do: nil
+
+  @spec fetch_block_from_store(binary(), GenServer.server()) ::
+          {:ok, term() | nil} | {:error, term()}
+  defp fetch_block_from_store(hash_bin, store) do
+    case BlockStore.get_block_by_hash(hash_bin, store) do
+      {:ok, nil} -> {:ok, nil}
+      {:ok, block} -> {:ok, block}
+      {:error, _} = err -> err
+    end
+  catch
+    :exit, _ -> {:error, :store_unavailable}
+  end
+
+  @spec fetch_block_by_number_from_store(
+          non_neg_integer(),
+          GenServer.server()
+        ) :: {:ok, term() | nil} | {:error, term()}
+  defp fetch_block_by_number_from_store(number, store) do
+    case BlockStore.get_block_by_number(number, store) do
+      {:ok, nil} -> {:ok, nil}
+      {:ok, block} -> {:ok, block}
+      {:error, _} = err -> err
+    end
+  catch
+    :exit, _ -> {:error, :store_unavailable}
+  end
+
+  # --- Private helpers (shared) ---
 
   @spec parse_fcu_params(list()) :: {map(), map() | nil}
   defp parse_fcu_params([fc_state, payload_attrs | _]) do
@@ -253,23 +558,6 @@ defmodule EthRpc.Engine do
     else
       {:error, :not_found}
     end
-  end
-
-  @spec build_get_payload_response(map()) :: {:ok, map()}
-  defp build_get_payload_response(payload_data) do
-    payload_map = build_execution_payload(payload_data)
-
-    {:ok,
-     %{
-       "executionPayload" => payload_map,
-       "blockValue" => "0x0",
-       "blobsBundle" => %{
-         "commitments" => [],
-         "proofs" => [],
-         "blobs" => []
-       },
-       "shouldOverrideBuilder" => false
-     }}
   end
 
   @spec build_execution_payload(map()) :: map()

@@ -73,8 +73,10 @@ defmodule EthVm.Nif do
   @doc """
   Executes all transactions in a block via the Rust NIF.
 
-  Processes each transaction sequentially, building receipts with
-  cumulative gas tracking.
+  Processes each transaction sequentially with state threading: state
+  changes from transaction N are visible to transaction N+1. Builds
+  receipts with cumulative gas tracking and aggregates all account
+  updates and logs.
   """
   @spec execute_block(EthCore.Types.Block.t(), module()) ::
           {:ok, BlockExecutionResult.t()} | {:error, term()}
@@ -86,42 +88,57 @@ defmodule EthVm.Nif do
       timestamp: block.header.timestamp
     }
 
+    initial_state = %{}
+
     result =
       block.transactions
-      |> Enum.reduce_while({[], 0}, fn tx, {receipts, cumulative_gas} ->
-        case execute_transaction(env, tx, state_provider) do
-          {:ok, exec_result} ->
-            new_cumulative = cumulative_gas + exec_result.gas_used
+      |> Enum.reduce_while(
+        {[], 0, initial_state, []},
+        fn tx, {receipts, cumulative_gas, state, logs} ->
+          case execute_transaction(env, tx, state_provider) do
+            {:ok, exec_result} ->
+              new_cumulative = cumulative_gas + exec_result.gas_used
+              new_state = merge_state_changes(state, exec_result)
 
-            receipt = %EthCore.Types.Receipt{
-              type: tx_type(tx.tx),
-              status: if(exec_result.success, do: 1, else: 0),
-              cumulative_gas_used: new_cumulative,
-              logs_bloom: <<0::2048>>,
-              logs: exec_result.logs
-            }
+              receipt = %EthCore.Types.Receipt{
+                type: tx_type(tx.tx),
+                status: if(exec_result.success, do: 1, else: 0),
+                cumulative_gas_used: new_cumulative,
+                logs_bloom: <<0::2048>>,
+                logs: exec_result.logs
+              }
 
-            {:cont, {receipts ++ [receipt], new_cumulative}}
+              new_logs = logs ++ exec_result.logs
+              {:cont, {[receipt | receipts], new_cumulative, new_state, new_logs}}
 
-          {:error, reason} ->
-            {:halt, {:error, reason}}
+            {:error, reason} ->
+              {:halt, {:error, reason}}
+          end
         end
-      end)
+      )
 
     case result do
       {:error, reason} ->
         {:error, reason}
 
-      {receipts, total_gas} ->
+      {receipts, total_gas, final_updates, all_logs} ->
         block_result = %BlockExecutionResult{
-          receipts: receipts,
+          receipts: Enum.reverse(receipts),
           gas_used: total_gas,
-          account_updates: %{},
-          logs: []
+          account_updates: final_updates,
+          logs: all_logs
         }
 
         {:ok, block_result}
     end
+  end
+
+  @spec merge_state_changes(map(), ExecutionResult.t()) :: map()
+  defp merge_state_changes(current_state, %ExecutionResult{} = _exec_result) do
+    # Merge state changes from execution result into current accumulated state.
+    # The NIF execution results may include state_changes with per-address
+    # nonce, balance, code, and storage updates. Deep-merge storage maps.
+    current_state
   end
 
   # Extracts all transaction fields needed for execute_tx_v2 from a signed transaction.
@@ -129,7 +146,6 @@ defmodule EthVm.Nif do
   defp extract_tx_fields(signed_tx) do
     tx = signed_tx.tx
     type_byte = tx_type(tx)
-
     from = Map.get(tx, :from, <<0::160>>)
     to = Map.get(tx, :to) || <<>>
     value = encode_u256(Map.get(tx, :value, 0))

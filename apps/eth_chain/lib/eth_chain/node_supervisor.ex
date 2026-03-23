@@ -25,18 +25,39 @@ defmodule EthChain.NodeSupervisor do
 
     children =
       [
-        {EthStorage.Store, [name: EthStorage.Store, backend: backend_for(config)]},
-        {EthChain.Mempool, [name: EthChain.Mempool]},
+        maybe_start_store(config),
+        maybe_start_mempool(),
         genesis_task(),
-        {EthNet.Sync.Manager, []}
+        maybe_start_sync_manager()
       ]
-      |> maybe_add_rpc(config)
+      |> List.flatten()
 
     Supervisor.init(children, strategy: :one_for_one)
   end
 
-  @spec backend_for(EthChain.Config.t()) :: module()
-  defp backend_for(%EthChain.Config{}), do: EthStorage.Backend.Memory
+  defp maybe_start_store(_config) do
+    if Process.whereis(EthStorage.Store) do
+      []
+    else
+      [{EthStorage.Store, [name: EthStorage.Store]}]
+    end
+  end
+
+  defp maybe_start_mempool do
+    if Process.whereis(EthChain.Mempool) do
+      []
+    else
+      [{EthChain.Mempool, [name: EthChain.Mempool]}]
+    end
+  end
+
+  defp maybe_start_sync_manager do
+    if Process.whereis(EthNet.Sync.Manager) do
+      []
+    else
+      [{EthNet.Sync.Manager, []}]
+    end
+  end
 
   @spec genesis_task() :: Supervisor.child_spec()
   defp genesis_task do

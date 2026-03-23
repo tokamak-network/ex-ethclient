@@ -25,7 +25,8 @@ defmodule EthStorage.MixProject do
   defp deps do
     [
       {:eth_core, in_umbrella: true},
-      {:eth_crypto, in_umbrella: true}
+      {:eth_crypto, in_umbrella: true},
+      {:rustler, "~> 0.36.1", runtime: false}
     ]
   end
 end

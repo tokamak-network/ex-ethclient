@@ -1,0 +1,12 @@
+[package]
+name = "rocks_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rocks_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.36"
+rocksdb = "0.22"

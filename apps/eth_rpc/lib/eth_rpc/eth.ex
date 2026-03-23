@@ -73,7 +73,22 @@ defmodule EthRpc.Eth do
     "engine_getClientVersionV1" => :engine_get_client_version_v1,
     "engine_exchangeTransitionConfigurationV1" =>
       :engine_exchange_transition_config_v1,
-    "engine_exchangeCapabilities" => :engine_exchange_capabilities
+    "engine_exchangeCapabilities" => :engine_exchange_capabilities,
+    "eth_feeHistory" => :eth_fee_history,
+    "eth_maxPriorityFeePerGas" => :eth_max_priority_fee_per_gas,
+    "eth_blobBaseFee" => :eth_blob_base_fee,
+    "eth_createAccessList" => :eth_create_access_list,
+    "eth_sendTransaction" => :eth_send_transaction,
+    "debug_getRawHeader" => :debug_get_raw_header,
+    "debug_getRawBlock" => :debug_get_raw_block,
+    "debug_getRawTransaction" => :debug_get_raw_transaction,
+    "debug_getRawReceipts" => :debug_get_raw_receipts,
+    "admin_nodeInfo" => :admin_node_info,
+    "admin_peers" => :admin_peers,
+    "admin_addPeer" => :admin_add_peer,
+    "admin_setLogLevel" => :admin_set_log_level,
+    "txpool_content" => :txpool_content,
+    "txpool_status" => :txpool_status
   }
 
   @doc """
@@ -196,7 +211,18 @@ defmodule EthRpc.Eth do
 
   @doc false
   @spec eth_gas_price(list()) :: {:ok, String.t()}
-  def eth_gas_price(_params), do: {:ok, "0x3B9ACA00"}
+  def eth_gas_price(_params) do
+    if store_available?() do
+      {_mod, name} = store()
+
+      case EthChain.GasOracle.suggest_gas_price(name) do
+        {:ok, price} -> {:ok, Hex.encode_quantity(price)}
+        _ -> {:ok, "0x3b9aca00"}
+      end
+    else
+      {:ok, "0x3b9aca00"}
+    end
+  end
 
   @doc false
   @spec eth_get_block_by_number(list()) :: {:ok, map() | nil}
@@ -570,6 +596,77 @@ defmodule EthRpc.Eth do
     {:error, -32602, "Invalid params: expected [address, storage_keys, block_tag]"}
   end
 
+  # -- Fee & Gas methods (C2) -----------------------------------------------
+
+  @doc false
+  @spec eth_fee_history(list()) :: {:ok, map()} | {:error, integer(), String.t()}
+  def eth_fee_history([block_count_hex, newest_block_hex | rest]) do
+    reward_percentiles = List.first(rest) || []
+
+    with {:ok, block_count} <- parse_quantity_or_int(block_count_hex),
+         {:ok, newest} <- parse_block_or_tag(newest_block_hex) do
+      if store_available?() do
+        {_mod, name} = store()
+        EthChain.FeeHistory.get_fee_history(block_count, newest, reward_percentiles, name)
+      else
+        {:ok,
+         %{
+           "oldestBlock" => "0x0",
+           "baseFeePerGas" => ["0x0"],
+           "gasUsedRatio" => [],
+           "reward" => []
+         }}
+      end
+    else
+      _ -> {:error, -32602, "Invalid params"}
+    end
+  end
+
+  def eth_fee_history(_params) do
+    {:error, -32602,
+     "Invalid params: expected [blockCount, newestBlock, rewardPercentiles]"}
+  end
+
+  @doc false
+  @spec eth_max_priority_fee_per_gas(list()) :: {:ok, String.t()}
+  def eth_max_priority_fee_per_gas(_params) do
+    if store_available?() do
+      {_mod, name} = store()
+
+      case EthChain.GasOracle.suggest_max_priority_fee(name) do
+        {:ok, fee} -> {:ok, Hex.encode_quantity(fee)}
+        _ -> {:ok, "0x3b9aca00"}
+      end
+    else
+      {:ok, "0x3b9aca00"}
+    end
+  end
+
+  @doc false
+  @spec eth_blob_base_fee(list()) :: {:ok, String.t()}
+  def eth_blob_base_fee(_params) do
+    case fetch_latest_header() do
+      {:ok, header} when not is_nil(header) ->
+        blob_fee = header.excess_blob_gas || 1
+        {:ok, Hex.encode_quantity(blob_fee)}
+
+      _ ->
+        {:ok, "0x1"}
+    end
+  end
+
+  @doc false
+  @spec eth_create_access_list(list()) :: {:ok, map()}
+  def eth_create_access_list(_params) do
+    {:ok, %{"accessList" => [], "gasUsed" => "0x5208"}}
+  end
+
+  @doc false
+  @spec eth_send_transaction(list()) :: {:error, integer(), String.t()}
+  def eth_send_transaction(_params) do
+    {:error, -32601, "eth_sendTransaction is not supported (no key management)"}
+  end
+
   # -- net_ namespace --------------------------------------------------------
 
   @doc false
@@ -728,7 +825,64 @@ defmodule EthRpc.Eth do
     Engine.exchange_capabilities(params)
   end
 
+  # -- debug_ namespace ------------------------------------------------------
+
+  def debug_get_raw_header(params), do: EthRpc.Debug.get_raw_header(params)
+  def debug_get_raw_block(params), do: EthRpc.Debug.get_raw_block(params)
+  def debug_get_raw_transaction(params), do: EthRpc.Debug.get_raw_transaction(params)
+  def debug_get_raw_receipts(params), do: EthRpc.Debug.get_raw_receipts(params)
+
+  # -- admin_ namespace ------------------------------------------------------
+
+  def admin_node_info(params), do: EthRpc.Admin.node_info(params)
+  def admin_peers(params), do: EthRpc.Admin.peers(params)
+  def admin_add_peer(params), do: EthRpc.Admin.add_peer(params)
+  def admin_set_log_level(params), do: EthRpc.Admin.set_log_level(params)
+
+  # -- txpool_ namespace -----------------------------------------------------
+
+  def txpool_content(params), do: EthRpc.Txpool.content(params)
+  def txpool_status(params), do: EthRpc.Txpool.status(params)
+
   # -- Private helpers -------------------------------------------------------
+
+  @spec parse_quantity_or_int(term()) :: {:ok, non_neg_integer()} | {:error, term()}
+  defp parse_quantity_or_int(val) when is_integer(val), do: {:ok, val}
+  defp parse_quantity_or_int(val) when is_binary(val), do: Hex.decode_quantity(val)
+  defp parse_quantity_or_int(_), do: {:error, :invalid_param}
+
+  @spec parse_block_or_tag(String.t()) ::
+          {:ok, non_neg_integer() | :latest} | {:error, term()}
+  defp parse_block_or_tag("latest"), do: {:ok, :latest}
+  defp parse_block_or_tag("earliest"), do: {:ok, 0}
+  defp parse_block_or_tag("pending"), do: {:ok, :latest}
+  defp parse_block_or_tag("0x" <> _ = hex), do: Hex.decode_quantity(hex)
+  defp parse_block_or_tag(_), do: {:error, :invalid_block_tag}
+
+  @spec fetch_latest_header() ::
+          {:ok, EthCore.Types.BlockHeader.t() | nil} | {:error, term()}
+  defp fetch_latest_header do
+    if store_available?() do
+      case store_call(:get_latest_block_number) do
+        {:ok, nil} ->
+          {:ok, nil}
+
+        {:ok, number} ->
+          case store_call(:get_block_by_number, [number]) do
+            {:ok, {header_bin, _body_bin}} ->
+              {:ok, :erlang.binary_to_term(header_bin)}
+
+            _ ->
+              {:ok, nil}
+          end
+
+        _ ->
+          {:ok, nil}
+      end
+    else
+      {:ok, nil}
+    end
+  end
 
   @spec submit_raw_transaction(binary()) ::
           {:ok, <<_::256>>} | {:error, term()}

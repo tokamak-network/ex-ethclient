@@ -108,7 +108,7 @@ defmodule EthRpc.EthTest do
     end
 
     test "eth_gasPrice returns 1 gwei" do
-      assert {:ok, "0x3B9ACA00"} = Eth.handle("eth_gasPrice", [])
+      assert {:ok, "0x3b9aca00"} = Eth.handle("eth_gasPrice", [])
     end
 
     test "eth_getBlockByNumber returns nil when no store" do

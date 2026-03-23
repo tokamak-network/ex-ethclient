@@ -174,14 +174,32 @@ defmodule EthNet.Peer.Connection do
               "Peer: Remote network_id=#{status.network_id}, TD=#{status.total_difficulty}"
             )
 
-            state = %{state | remote_status: status, state: :active}
+            # Validate genesis hash and network_id
+            expected_genesis = EthNet.Chain.genesis_hash(:mainnet)
+            expected_network = EthNet.Chain.network_id(:mainnet)
 
-            # Notify the peer manager
-            send(EthNet.Peer.Manager, {:peer_connected, self(), state.remote_node_id, status})
+            cond do
+              status.network_id != expected_network ->
+                Logger.warning("Peer: Wrong network #{status.network_id}, expected #{expected_network}")
+                {:stop, {:wrong_network, status.network_id}, state}
 
-            # Switch to active mode for incoming messages
-            :inet.setopts(state.socket, active: :once)
-            {:noreply, state}
+              status.genesis_hash != expected_genesis ->
+                Logger.warning("Peer: Wrong genesis hash, disconnecting")
+                {:stop, :wrong_genesis, state}
+
+              true ->
+                state = %{state | remote_status: status, state: :active}
+
+                # Notify the peer manager
+                send(EthNet.Peer.Manager, {:peer_connected, self(), state.remote_node_id, status})
+
+                # Trigger block sync if peer has higher blocks
+                trigger_sync(status)
+
+                # Switch to active mode for incoming messages
+                :inet.setopts(state.socket, active: :once)
+                {:noreply, state}
+            end
 
           {:ok, code, payload, state} when code == @disconnect_code ->
             {:disconnect, reason} = P2P.decode(code, payload)
@@ -475,6 +493,41 @@ defmodule EthNet.Peer.Connection do
       apply(EthNet.Sync.Manager, function, args)
     rescue
       _ -> :ok
+    end
+  end
+
+  defp trigger_sync(_remote_status) do
+    try do
+      case EthNet.Sync.Manager.status() do
+        %{status: :idle} ->
+          # Post-merge mainnet: ~20M+ blocks. Start with a reasonable target.
+          # The sync manager will discover the real head via peer responses.
+          our_head = get_local_head()
+          # Request at least the next batch of blocks
+          target = our_head + 192
+          Logger.info("Peer: Triggering sync from block #{our_head} to #{target}")
+          EthNet.Sync.Manager.start_sync(target)
+
+        %{status: :syncing} ->
+          :ok
+
+        _ ->
+          :ok
+      end
+    rescue
+      _ -> :ok
+    end
+  end
+
+  defp get_local_head do
+    try do
+      case EthStorage.BlockStore.latest_block_number(EthStorage.Store) do
+        {:ok, nil} -> 0
+        {:ok, n} -> n
+        _ -> 0
+      end
+    rescue
+      _ -> 0
     end
   end
 

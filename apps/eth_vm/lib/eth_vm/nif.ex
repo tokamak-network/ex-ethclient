@@ -4,6 +4,13 @@ defmodule EthVm.Nif do
 
   Delegates transaction execution to `EthVm.Native` and converts
   results into `EthVm.Types` structs. Backed by revm via Rust NIF.
+
+  Supports all 5 Ethereum transaction types:
+  - Legacy (Type 0)
+  - EIP-2930 (Type 1) with access lists
+  - EIP-1559 (Type 2) with dynamic fees
+  - EIP-4844 (Type 3) with blob gas
+  - EIP-7702 (Type 4) with authorization lists
   """
 
   @behaviour EthVm.Evm
@@ -15,9 +22,8 @@ defmodule EthVm.Nif do
   @doc """
   Executes a single signed transaction via the Rust NIF.
 
-  Uses the full execute_tx NIF when possible, which provides real
-  EVM execution via revm including bytecode execution, gas metering,
-  and state changes.
+  Uses execute_tx_v2 which provides full transaction type support
+  including access lists, EIP-1559 fees, blob transactions, and EIP-7702.
   """
   @spec execute_transaction(
           EthVm.Types.Environment.t(),
@@ -25,15 +31,25 @@ defmodule EthVm.Nif do
           module()
         ) :: {:ok, ExecutionResult.t()} | {:error, term()}
   def execute_transaction(_env, signed_tx, _state_provider) do
-    tx = signed_tx.tx
-    {from, to, value, gas_limit, gas_price, data} = extract_tx_fields(tx)
+    fields = extract_tx_fields(signed_tx)
 
     result =
-      if data == <<>> do
-        Native.execute_simple_tx(from, to, value, gas_limit, gas_price)
-      else
-        Native.execute_call(from, to, data, value, gas_limit, gas_price)
-      end
+      Native.execute_tx_v2(
+        fields.tx_type,
+        fields.from,
+        fields.to,
+        fields.value,
+        fields.gas_limit,
+        fields.gas_price,
+        fields.max_priority_fee,
+        fields.max_fee_per_blob_gas,
+        fields.data,
+        fields.code,
+        fields.nonce,
+        fields.balance,
+        fields.access_list_data,
+        fields.blob_hashes_data
+      )
 
     case result do
       {:ok, map} ->
@@ -108,22 +124,138 @@ defmodule EthVm.Nif do
     end
   end
 
-  # Extracts {from, to, value, gas_limit, gas_price, data} from a transaction.
-  @spec extract_tx_fields(struct()) ::
-          {binary(), binary(), non_neg_integer(), non_neg_integer(), non_neg_integer(), binary()}
-  defp extract_tx_fields(tx) do
+  # Extracts all transaction fields needed for execute_tx_v2 from a signed transaction.
+  @spec extract_tx_fields(EthCore.Types.SignedTransaction.t()) :: map()
+  defp extract_tx_fields(signed_tx) do
+    tx = signed_tx.tx
+    type_byte = tx_type(tx)
+
     from = Map.get(tx, :from, <<0::160>>)
-    to = Map.get(tx, :to, <<0::160>>) || <<0::160>>
-    value = Map.get(tx, :value, 0)
+    to = Map.get(tx, :to) || <<>>
+    value = encode_u256(Map.get(tx, :value, 0))
     gas_limit = Map.get(tx, :gas_limit, 21_000)
     data = Map.get(tx, :data, <<>>)
+    nonce = Map.get(tx, :nonce, 0)
 
+    # Gas price: for Legacy/EIP-2930 use gas_price, for EIP-1559+ use max_fee_per_gas
     gas_price =
-      Map.get(tx, :gas_price, nil) ||
-        Map.get(tx, :max_fee_per_gas, 0)
+      case type_byte do
+        t when t in [0, 1] -> encode_u256(Map.get(tx, :gas_price, 0))
+        _ -> encode_u256(Map.get(tx, :max_fee_per_gas, 0))
+      end
 
-    {from, to, value, gas_limit, gas_price, data}
+    max_priority_fee =
+      case type_byte do
+        t when t >= 2 -> encode_u256(Map.get(tx, :max_priority_fee_per_gas, 0))
+        _ -> <<>>
+      end
+
+    max_fee_per_blob_gas =
+      case type_byte do
+        3 -> encode_u256(Map.get(tx, :max_fee_per_blob_gas, 0))
+        _ -> <<>>
+      end
+
+    access_list_data =
+      case Map.get(tx, :access_list) do
+        nil -> <<>>
+        [] -> <<>>
+        list -> encode_access_list(list)
+      end
+
+    blob_hashes_data =
+      case Map.get(tx, :blob_versioned_hashes) do
+        nil -> <<>>
+        [] -> <<>>
+        hashes -> encode_blob_hashes(hashes)
+      end
+
+    # Balance: give sender a generous balance since balance_check is disabled
+    balance = encode_u256(10_000_000_000_000_000_000)
+
+    %{
+      tx_type: type_byte,
+      from: from,
+      to: to,
+      value: value,
+      gas_limit: gas_limit,
+      gas_price: gas_price,
+      max_priority_fee: max_priority_fee,
+      max_fee_per_blob_gas: max_fee_per_blob_gas,
+      data: data,
+      code: <<>>,
+      nonce: nonce,
+      balance: balance,
+      access_list_data: access_list_data,
+      blob_hashes_data: blob_hashes_data
+    }
   end
+
+  # Encodes an integer as a big-endian binary (minimal representation).
+  @spec encode_u256(non_neg_integer()) :: binary()
+  defp encode_u256(0), do: <<>>
+
+  defp encode_u256(n) when is_integer(n) and n > 0 do
+    :binary.encode_unsigned(n, :big)
+  end
+
+  # Encodes an access list into binary format.
+  #
+  # Format:
+  #   4 bytes: num_entries (u32 big-endian)
+  #   Per entry:
+  #     20 bytes: address
+  #     4 bytes: num_keys (u32 big-endian)
+  #     N * 32 bytes: storage keys
+  @spec encode_access_list([{binary(), [binary()]}]) :: binary()
+  defp encode_access_list(entries) do
+    num_entries = length(entries)
+
+    entry_data =
+      Enum.reduce(entries, <<>>, fn {address, storage_keys}, acc ->
+        addr = pad_address(address)
+        num_keys = length(storage_keys)
+
+        keys_data =
+          Enum.reduce(storage_keys, <<>>, fn key, kacc ->
+            kacc <> pad_hash(key)
+          end)
+
+        acc <> addr <> <<num_keys::unsigned-big-32>> <> keys_data
+      end)
+
+    <<num_entries::unsigned-big-32>> <> entry_data
+  end
+
+  # Encodes blob versioned hashes as concatenated 32-byte values.
+  @spec encode_blob_hashes([binary()]) :: binary()
+  defp encode_blob_hashes(hashes) do
+    Enum.reduce(hashes, <<>>, fn hash, acc ->
+      acc <> pad_hash(hash)
+    end)
+  end
+
+  # Pads or truncates an address to 20 bytes.
+  @spec pad_address(binary()) :: <<_::160>>
+  defp pad_address(addr) when byte_size(addr) == 20, do: addr
+
+  defp pad_address(addr) when byte_size(addr) < 20 do
+    padding_size = 20 - byte_size(addr)
+    <<0::size(padding_size * 8)>> <> addr
+  end
+
+  defp pad_address(addr), do: binary_part(addr, byte_size(addr) - 20, 20)
+
+  # Pads or truncates a hash to 32 bytes.
+  @spec pad_hash(binary()) :: <<_::256>>
+  defp pad_hash(hash) when byte_size(hash) == 32, do: hash
+
+  defp pad_hash(hash) when byte_size(hash) < 32 do
+    padding_size = 32 - byte_size(hash)
+    <<0::size(padding_size * 8)>> <> hash
+  end
+
+  defp pad_hash(hash), do: binary_part(hash, byte_size(hash) - 32, 32)
 
   @spec tx_type(struct()) :: non_neg_integer()
   defp tx_type(%EthCore.Types.Transaction.Legacy{}), do: 0

@@ -49,6 +49,34 @@ defmodule EthVm.Native do
   def execute_call(_from, _to, _data, _value, _gas_limit, _gas_price),
     do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc """
+  Executes a transaction with pre-loaded world state.
+
+  The state_data binary contains serialized account state produced by
+  `EthVm.StateLoader.serialize_state/1`.
+  """
+  @spec execute_tx_with_state(
+          binary(),
+          binary(),
+          binary(),
+          binary(),
+          non_neg_integer(),
+          binary(),
+          binary(),
+          non_neg_integer()
+        ) :: {:ok, map()} | {:error, atom() | String.t()}
+  def execute_tx_with_state(
+        _state_data,
+        _from,
+        _to,
+        _value,
+        _gas_limit,
+        _gas_price,
+        _data,
+        _nonce
+      ),
+      do: :erlang.nif_error(:nif_not_loaded)
+
   @doc "Returns the EVM engine version string."
   @spec evm_version() :: String.t()
   def evm_version, do: :erlang.nif_error(:nif_not_loaded)

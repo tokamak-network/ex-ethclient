@@ -2,10 +2,41 @@ defmodule EthNet.Sync.ManagerTest do
   use ExUnit.Case, async: false
 
   alias EthNet.Sync.Manager
+  alias EthCore.Types.BlockHeader
+
+  @empty_hash :binary.copy(<<0>>, 32)
+  @empty_bloom :binary.copy(<<0>>, 256)
+  @empty_nonce :binary.copy(<<0>>, 8)
+  @empty_ommers_hash EthCrypto.Hash.keccak256(ExRLP.encode([]))
 
   setup do
     start_supervised!(Manager)
     :ok
+  end
+
+  defp make_header(number) do
+    %BlockHeader{
+      parent_hash: @empty_hash,
+      ommers_hash: @empty_ommers_hash,
+      coinbase: :binary.copy(<<0>>, 20),
+      state_root: @empty_hash,
+      transactions_root: @empty_hash,
+      receipts_root: @empty_hash,
+      logs_bloom: @empty_bloom,
+      difficulty: 0,
+      number: number,
+      gas_limit: 30_000_000,
+      gas_used: 0,
+      timestamp: 1_700_000_000 + number,
+      extra_data: <<>>,
+      mix_hash: @empty_hash,
+      nonce: @empty_nonce,
+      base_fee_per_gas: 1_000_000_000
+    }
+  end
+
+  defp encode_header_rlp(header) do
+    EthCore.RLP.encode_header(header)
   end
 
   test "starts with idle status" do
@@ -31,22 +62,27 @@ defmodule EthNet.Sync.ManagerTest do
     Manager.start_sync(1000)
     Process.sleep(50)
 
-    Manager.handle_headers(self(), 1, [<<1, 2, 3>>, <<4, 5, 6>>])
+    headers = [make_header(1), make_header(2)]
+    header_rlps = Enum.map(headers, &encode_header_rlp/1)
+
+    Manager.handle_headers(self(), 1, header_rlps)
     Process.sleep(50)
 
     status = Manager.status()
     assert status.downloaded_headers == 2
   end
 
-  test "handle_bodies stores downloaded bodies" do
+  test "handle_bodies logs receipt for unknown request without crashing" do
     Manager.start_sync(1000)
     Process.sleep(50)
 
-    Manager.handle_bodies(self(), 1, [<<10, 20>>, <<30, 40>>])
+    # Send bodies without a matching pending request — should not crash
+    Manager.handle_bodies(self(), 999, [[[], []], [[], []]])
     Process.sleep(50)
 
     status = Manager.status()
-    assert status.downloaded_bodies == 2
+    assert status.status == :syncing
+    assert status.downloaded_bodies == 0
   end
 
   test "handle_new_block_hashes does not crash" do

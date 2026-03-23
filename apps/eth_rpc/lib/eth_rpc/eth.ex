@@ -6,6 +6,7 @@ defmodule EthRpc.Eth do
   When the Store is unavailable, sensible defaults are returned.
   """
 
+  alias EthCore.Types.{SignedTransaction, Transaction}
   alias EthRpc.{Engine, Formatters, Hex}
 
   @type rpc_result :: {:ok, term()} | {:error, integer(), String.t()}
@@ -24,8 +25,13 @@ defmodule EthRpc.Eth do
     "eth_gasPrice" => :eth_gas_price,
     "eth_getBlockByNumber" => :eth_get_block_by_number,
     "eth_getBlockByHash" => :eth_get_block_by_hash,
+    "eth_getBlockTransactionCountByNumber" => :eth_get_block_tx_count_by_number,
+    "eth_getBlockTransactionCountByHash" => :eth_get_block_tx_count_by_hash,
     "eth_getTransactionByHash" => :eth_get_transaction_by_hash,
+    "eth_getTransactionByBlockNumberAndIndex" => :eth_get_tx_by_block_number_and_index,
+    "eth_getTransactionByBlockHashAndIndex" => :eth_get_tx_by_block_hash_and_index,
     "eth_getTransactionReceipt" => :eth_get_transaction_receipt,
+    "eth_getBlockReceipts" => :eth_get_block_receipts,
     "eth_sendRawTransaction" => :eth_send_raw_transaction,
     "eth_syncing" => :eth_syncing,
     "eth_mining" => :eth_mining,
@@ -182,19 +188,166 @@ defmodule EthRpc.Eth do
            store_call(:get_block_header, [hash_bin]) do
       header = :erlang.binary_to_term(encoded)
       full = full_txs?(params)
-      {:ok, Formatters.format_block(header, full)}
+      txs = fetch_block_transactions(hash_bin)
+      {:ok, Formatters.format_block(header, txs, full)}
     else
       _error -> {:ok, nil}
     end
   end
 
-  @doc false
-  @spec eth_get_transaction_by_hash(list()) :: {:ok, nil}
-  def eth_get_transaction_by_hash(_params), do: {:ok, nil}
+  @doc """
+  Returns the number of transactions in a block matching the given block number.
+  """
+  @spec eth_get_block_tx_count_by_number(list()) :: {:ok, String.t() | nil}
+  def eth_get_block_tx_count_by_number(params) do
+    with {:ok, block_number} <- parse_block_tag(params),
+         {:ok, result} <- fetch_block_by_number(block_number) do
+      count_block_transactions(result)
+    else
+      _error -> {:ok, nil}
+    end
+  end
 
-  @doc false
-  @spec eth_get_transaction_receipt(list()) :: {:ok, nil}
-  def eth_get_transaction_receipt(_params), do: {:ok, nil}
+  @doc """
+  Returns the number of transactions in a block matching the given block hash.
+  """
+  @spec eth_get_block_tx_count_by_hash(list()) :: {:ok, String.t() | nil}
+  def eth_get_block_tx_count_by_hash(params) do
+    with {:ok, hash_bin} <- parse_block_hash(params),
+         {:ok, body_bin} when not is_nil(body_bin) <-
+           store_call(:get_block_body, [hash_bin]) do
+      body = :erlang.binary_to_term(body_bin)
+      {:ok, Hex.encode_quantity(length(body.transactions))}
+    else
+      _error -> {:ok, nil}
+    end
+  end
+
+  @doc """
+  Returns information about a transaction by block number and index.
+  """
+  @spec eth_get_tx_by_block_number_and_index(list()) :: {:ok, map() | nil}
+  def eth_get_tx_by_block_number_and_index(params) do
+    with {:ok, block_number} <- parse_block_tag(params),
+         {:ok, tx_index} <- parse_tx_index(params),
+         {:ok, result} <- fetch_block_by_number(block_number) do
+      get_tx_at_index(result, tx_index)
+    else
+      _error -> {:ok, nil}
+    end
+  end
+
+  @doc """
+  Returns information about a transaction by block hash and index.
+  """
+  @spec eth_get_tx_by_block_hash_and_index(list()) :: {:ok, map() | nil}
+  def eth_get_tx_by_block_hash_and_index(params) do
+    with {:ok, hash_bin} <- parse_block_hash(params),
+         {:ok, tx_index} <- parse_tx_index(params),
+         {:ok, header_bin} when not is_nil(header_bin) <-
+           store_call(:get_block_header, [hash_bin]),
+         {:ok, body_bin} when not is_nil(body_bin) <-
+           store_call(:get_block_body, [hash_bin]) do
+      header = :erlang.binary_to_term(header_bin)
+      body = :erlang.binary_to_term(body_bin)
+
+      case Enum.at(body.transactions, tx_index) do
+        nil ->
+          {:ok, nil}
+
+        signed_tx ->
+          {:ok,
+           Formatters.format_transaction(signed_tx, %{
+             block_hash: hash_bin,
+             block_number: header.number,
+             tx_index: tx_index
+           })}
+      end
+    else
+      _error -> {:ok, nil}
+    end
+  end
+
+  @doc """
+  Returns the transaction for the given hash, looked up via the tx location index.
+  """
+  @spec eth_get_transaction_by_hash(list()) :: {:ok, map() | nil}
+  def eth_get_transaction_by_hash(params) do
+    with {:ok, tx_hash} <- parse_block_hash(params),
+         {:ok, {block_hash, tx_index}} <- lookup_tx_location(tx_hash),
+         {:ok, header_bin} when not is_nil(header_bin) <-
+           store_call(:get_block_header, [block_hash]),
+         {:ok, body_bin} when not is_nil(body_bin) <-
+           store_call(:get_block_body, [block_hash]) do
+      header = :erlang.binary_to_term(header_bin)
+      body = :erlang.binary_to_term(body_bin)
+
+      case Enum.at(body.transactions, tx_index) do
+        nil ->
+          {:ok, nil}
+
+        signed_tx ->
+          {:ok,
+           Formatters.format_transaction(signed_tx, %{
+             block_hash: block_hash,
+             block_number: header.number,
+             tx_index: tx_index
+           })}
+      end
+    else
+      _error -> {:ok, nil}
+    end
+  end
+
+  @doc """
+  Returns the receipt of a transaction by transaction hash.
+  """
+  @spec eth_get_transaction_receipt(list()) :: {:ok, map() | nil}
+  def eth_get_transaction_receipt(params) do
+    with {:ok, tx_hash} <- parse_block_hash(params),
+         {:ok, {block_hash, tx_index}} <- lookup_tx_location(tx_hash),
+         {:ok, header_bin} when not is_nil(header_bin) <-
+           store_call(:get_block_header, [block_hash]),
+         {:ok, body_bin} when not is_nil(body_bin) <-
+           store_call(:get_block_body, [block_hash]),
+         {:ok, receipt_bin} when not is_nil(receipt_bin) <-
+           store_call(:get_receipt, [block_hash, tx_index]) do
+      header = :erlang.binary_to_term(header_bin)
+      body = :erlang.binary_to_term(body_bin)
+      receipt = :erlang.binary_to_term(receipt_bin)
+      signed_tx = Enum.at(body.transactions, tx_index)
+
+      from_addr = recover_tx_sender(signed_tx)
+      to_addr = tx_to_field(signed_tx)
+
+      {:ok,
+       Formatters.format_full_receipt(receipt, %{
+         tx_hash: tx_hash,
+         tx_index: tx_index,
+         block_hash: block_hash,
+         block_number: header.number,
+         from: from_addr,
+         to: to_addr,
+         gas_used: receipt.cumulative_gas_used,
+         contract_address: nil
+       })}
+    else
+      _error -> {:ok, nil}
+    end
+  end
+
+  @doc """
+  Returns all receipts for a block by number tag.
+  """
+  @spec eth_get_block_receipts(list()) :: {:ok, list() | nil}
+  def eth_get_block_receipts(params) do
+    with {:ok, block_number} <- parse_block_tag(params),
+         {:ok, result} <- fetch_block_by_number(block_number) do
+      format_block_receipts(result)
+    else
+      _error -> {:ok, nil}
+    end
+  end
 
   @doc false
   @spec eth_send_raw_transaction(list()) ::
@@ -216,9 +369,29 @@ defmodule EthRpc.Eth do
     {:error, -32602, "Invalid params: expected [hex_data]"}
   end
 
-  @doc false
-  @spec eth_syncing(list()) :: {:ok, false}
-  def eth_syncing(_params), do: {:ok, false}
+  @doc """
+  Returns sync status. If syncing, returns starting/current/highest block numbers.
+  If synced or idle, returns false.
+  """
+  @spec eth_syncing(list()) :: {:ok, false | map()}
+  def eth_syncing(_params) do
+    if sync_manager_available?() do
+      status = EthNet.Sync.Manager.status()
+
+      if status.status == :syncing do
+        {:ok,
+         %{
+           "startingBlock" => Hex.encode_quantity(0),
+           "currentBlock" => Hex.encode_quantity(status.current_block),
+           "highestBlock" => Hex.encode_quantity(status.target_block)
+         }}
+      else
+        {:ok, false}
+      end
+    else
+      {:ok, false}
+    end
+  end
 
   @doc false
   @spec eth_mining(list()) :: {:ok, false}
@@ -404,6 +577,12 @@ defmodule EthRpc.Eth do
     is_pid(pid) and Process.alive?(pid)
   end
 
+  @spec sync_manager_available?() :: boolean()
+  defp sync_manager_available? do
+    pid = GenServer.whereis(EthNet.Sync.Manager)
+    is_pid(pid) and Process.alive?(pid)
+  end
+
   @spec store() :: {module(), GenServer.server()}
   defp store do
     case Application.get_env(:eth_rpc, :store) do
@@ -472,6 +651,13 @@ defmodule EthRpc.Eth do
 
   defp parse_block_hash(_), do: {:error, :invalid_hex}
 
+  @spec parse_tx_index(list()) :: {:ok, non_neg_integer()} | {:error, :invalid_hex}
+  defp parse_tx_index([_tag, index_hex | _rest]) when is_binary(index_hex) do
+    Hex.decode_quantity(index_hex)
+  end
+
+  defp parse_tx_index(_), do: {:error, :invalid_hex}
+
   @spec fetch_block_by_number(non_neg_integer() | :latest | :earliest | :pending) ::
           {:ok, {binary(), binary()} | nil} | {:error, term()}
   defp fetch_block_by_number(:latest) do
@@ -500,9 +686,10 @@ defmodule EthRpc.Eth do
         ) :: {:ok, map() | nil}
   defp format_block_result(nil, _full_txs), do: {:ok, nil}
 
-  defp format_block_result({header_bin, _body_bin}, full_txs) do
+  defp format_block_result({header_bin, body_bin}, full_txs) do
     header = :erlang.binary_to_term(header_bin)
-    {:ok, Formatters.format_block(header, full_txs)}
+    txs = decode_body_transactions(body_bin)
+    {:ok, Formatters.format_block(header, txs, full_txs)}
   end
 
   @spec full_txs?(list()) :: boolean()
@@ -521,6 +708,128 @@ defmodule EthRpc.Eth do
         {:ok, code} -> {:ok, Hex.encode_data(code)}
         _error -> {:ok, "0x"}
       end
+    end
+  end
+
+  @spec fetch_block_transactions(binary()) :: [SignedTransaction.t()]
+  defp fetch_block_transactions(block_hash) do
+    case store_call(:get_block_body, [block_hash]) do
+      {:ok, nil} -> []
+      {:ok, body_bin} -> decode_body_transactions(body_bin)
+      _error -> []
+    end
+  end
+
+  @spec decode_body_transactions(binary() | nil) :: [SignedTransaction.t()]
+  defp decode_body_transactions(nil), do: []
+
+  defp decode_body_transactions(body_bin) do
+    body = :erlang.binary_to_term(body_bin)
+    Map.get(body, :transactions, [])
+  end
+
+  @spec count_block_transactions({binary(), binary()} | nil) :: {:ok, String.t() | nil}
+  defp count_block_transactions(nil), do: {:ok, nil}
+
+  defp count_block_transactions({_header_bin, body_bin}) do
+    txs = decode_body_transactions(body_bin)
+    {:ok, Hex.encode_quantity(length(txs))}
+  end
+
+  @spec get_tx_at_index({binary(), binary()} | nil, non_neg_integer()) :: {:ok, map() | nil}
+  defp get_tx_at_index(nil, _tx_index), do: {:ok, nil}
+
+  defp get_tx_at_index({header_bin, body_bin}, tx_index) do
+    header = :erlang.binary_to_term(header_bin)
+    body = :erlang.binary_to_term(body_bin)
+
+    case Enum.at(body.transactions, tx_index) do
+      nil ->
+        {:ok, nil}
+
+      signed_tx ->
+        block_hash = Formatters.compute_block_hash(header)
+
+        {:ok,
+         Formatters.format_transaction(signed_tx, %{
+           block_hash: block_hash,
+           block_number: header.number,
+           tx_index: tx_index
+         })}
+    end
+  end
+
+  @spec lookup_tx_location(binary()) ::
+          {:ok, {binary(), non_neg_integer()}} | {:error, term()}
+  defp lookup_tx_location(tx_hash) do
+    case store_call(:get_tx_location, [tx_hash]) do
+      {:ok, nil} -> {:error, :not_found}
+      {:ok, {_block_hash, _tx_index} = location} -> {:ok, location}
+      error -> error
+    end
+  end
+
+  @spec format_block_receipts({binary(), binary()} | nil) :: {:ok, list() | nil}
+  defp format_block_receipts(nil), do: {:ok, nil}
+
+  defp format_block_receipts({header_bin, body_bin}) do
+    header = :erlang.binary_to_term(header_bin)
+    body = :erlang.binary_to_term(body_bin)
+    block_hash = Formatters.compute_block_hash(header)
+
+    receipts =
+      body.transactions
+      |> Enum.with_index()
+      |> Enum.map(fn {signed_tx, idx} ->
+        tx_hash = SignedTransaction.tx_hash(signed_tx)
+
+        case store_call(:get_receipt, [block_hash, idx]) do
+          {:ok, nil} ->
+            nil
+
+          {:ok, receipt_bin} ->
+            receipt = :erlang.binary_to_term(receipt_bin)
+
+            Formatters.format_full_receipt(receipt, %{
+              tx_hash: tx_hash,
+              tx_index: idx,
+              block_hash: block_hash,
+              block_number: header.number,
+              from: recover_tx_sender(signed_tx),
+              to: tx_to_field(signed_tx),
+              gas_used: receipt.cumulative_gas_used,
+              contract_address: nil
+            })
+
+          _error ->
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    {:ok, receipts}
+  end
+
+  @spec recover_tx_sender(SignedTransaction.t() | nil) :: binary() | nil
+  defp recover_tx_sender(nil), do: nil
+
+  defp recover_tx_sender(%SignedTransaction{} = signed_tx) do
+    case EthCore.Transaction.Signer.recover_sender(signed_tx) do
+      {:ok, address} -> address
+      {:error, _} -> nil
+    end
+  end
+
+  @spec tx_to_field(SignedTransaction.t() | nil) :: binary() | nil
+  defp tx_to_field(nil), do: nil
+
+  defp tx_to_field(%SignedTransaction{tx: tx}) do
+    case tx do
+      %Transaction.Legacy{to: to} -> to
+      %Transaction.EIP2930{to: to} -> to
+      %Transaction.EIP1559{to: to} -> to
+      %Transaction.EIP4844{to: to} -> to
+      %Transaction.EIP7702{to: to} -> to
     end
   end
 end

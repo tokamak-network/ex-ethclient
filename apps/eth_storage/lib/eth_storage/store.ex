@@ -123,6 +123,25 @@ defmodule EthStorage.Store do
     GenServer.call(server, {:put, :account_codes, code_hash, code})
   end
 
+  @doc "Stores a transaction location (block hash + index) keyed by tx hash."
+  @spec put_tx_location(GenServer.server(), <<_::256>>, <<_::256>>, non_neg_integer()) ::
+          :ok | {:error, term()}
+  def put_tx_location(server \\ __MODULE__, tx_hash, block_hash, tx_index) do
+    value = :erlang.term_to_binary({block_hash, tx_index})
+    GenServer.call(server, {:put, :tx_locations, tx_hash, value})
+  end
+
+  @doc "Gets a transaction location by tx hash. Returns `{block_hash, tx_index}` or nil."
+  @spec get_tx_location(GenServer.server(), <<_::256>>) ::
+          {:ok, {<<_::256>>, non_neg_integer()} | nil} | {:error, term()}
+  def get_tx_location(server \\ __MODULE__, tx_hash) do
+    case GenServer.call(server, {:get, :tx_locations, tx_hash}) do
+      {:ok, nil} -> {:ok, nil}
+      {:ok, bin} -> {:ok, :erlang.binary_to_term(bin)}
+      {:error, _} = err -> err
+    end
+  end
+
   @doc "Gets a receipt by block hash and transaction index."
   @spec get_receipt(GenServer.server(), <<_::256>>, non_neg_integer()) ::
           {:ok, binary() | nil} | {:error, term()}

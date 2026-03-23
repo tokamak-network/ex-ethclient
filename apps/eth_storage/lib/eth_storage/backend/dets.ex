@@ -14,6 +14,7 @@ defmodule EthStorage.Backend.DETS do
     :headers,
     :bodies,
     :receipts,
+    :tx_locations,
     :account_trie_nodes,
     :storage_trie_nodes,
     :account_codes,

@@ -6,7 +6,26 @@ defmodule ExEthclient.MixProject do
       apps_path: "apps",
       version: "0.1.0",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      name: "ex_ethclient",
+      source_url: "https://github.com/tokamak-network/ex_ethclient",
+      docs: docs()
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md"],
+      groups_for_modules: [
+        "Core Types": ~r/EthCore\..*/,
+        "Cryptography": ~r/EthCrypto\..*/,
+        "Networking": ~r/EthNet\..*/,
+        "Storage": ~r/EthStorage\..*/,
+        "EVM": ~r/EthVm\..*/,
+        "Chain": ~r/EthChain\..*/,
+        "JSON-RPC": ~r/EthRpc\..*/
+      ]
     ]
   end
 

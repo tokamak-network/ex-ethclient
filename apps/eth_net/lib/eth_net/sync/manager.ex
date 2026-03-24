@@ -52,15 +52,12 @@ defmodule EthNet.Sync.Manager do
   If the gap between current and target is larger than #{@snap_sync_threshold}
   blocks and a `pivot_root` is provided, snap sync is used. Otherwise falls
   back to full block-by-block sync.
+
+  Accepts `opts` for dependency injection: `:server`, `:pivot_root`,
+  `:block_pipeline`, `:store`.
   """
   @spec start_sync(non_neg_integer(), keyword()) :: :ok
   def start_sync(target_block, opts \\ []) do
-    GenServer.cast(__MODULE__, {:start_sync, target_block, opts})
-  end
-
-  @doc "Start syncing with options for dependency injection."
-  @spec start_sync(non_neg_integer(), keyword()) :: :ok
-  def start_sync(target_block, opts) do
     server = Keyword.get(opts, :server, __MODULE__)
     GenServer.cast(server, {:start_sync, target_block, opts})
   end

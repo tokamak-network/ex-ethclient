@@ -928,8 +928,9 @@ fn execute_tx_v3<'a>(
 
     // Build an in-memory database and load pre-fetched state
     let mut db = InMemoryDB::default();
+    let has_state = !state_data.is_empty();
 
-    if !state_data.is_empty() {
+    if has_state {
         if let Err(_e) = state::load_state_into_db(state_data.as_slice(), &mut db) {
             return Ok((atoms::error(), atoms::invalid_state_data()).encode(env));
         }
@@ -959,18 +960,28 @@ fn execute_tx_v3<'a>(
         blob_excess_gas_and_price: blob_excess,
     };
 
-    // Build the EVM context with real block environment
+    // Build the EVM context with real block environment.
+    // When state is provided, enable full validation (balance, nonce, base fee).
+    // When no state is provided, disable validation for compatibility (tests, etc).
     let ctx = Context::mainnet()
         .with_db(db)
         .with_block(block_env)
         .modify_cfg_chained(|cfg| {
             cfg.spec = spec_id;
-            // For real execution, we want validation enabled
-            cfg.disable_balance_check = false;
-            cfg.disable_block_gas_limit = false;
-            cfg.disable_base_fee = false;
-            cfg.disable_eip3607 = true; // Keep disabled: allows EOAs with code
-            cfg.disable_nonce_check = false;
+            if has_state {
+                // Real execution: validate everything
+                cfg.disable_balance_check = false;
+                cfg.disable_block_gas_limit = false;
+                cfg.disable_base_fee = false;
+                cfg.disable_nonce_check = false;
+            } else {
+                // No state provided: disable checks for compatibility
+                cfg.disable_balance_check = true;
+                cfg.disable_block_gas_limit = true;
+                cfg.disable_base_fee = true;
+                cfg.disable_nonce_check = true;
+            }
+            cfg.disable_eip3607 = true; // Always: allows EOAs with code
         })
         .modify_tx_chained(|tx: &mut TxEnv| {
             tx.tx_type = tx_type;

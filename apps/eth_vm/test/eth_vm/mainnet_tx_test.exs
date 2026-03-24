@@ -39,7 +39,8 @@ defmodule EthVm.MainnetTxTest do
   @block_timestamp 1_438_918_233
   @coinbase Base.decode16!("E6A7A1D47FF21B6321162AEA7C6CB457D5476BCA", case: :upper)
   @base_fee 0
-  @block_gas_limit 5_000
+  # Block 46147 gas limit was ~5,000,000 (miner-adjusted from genesis 5000)
+  @block_gas_limit 5_000_000
 
   # Sender needs enough balance to cover value + gas * gas_price
   # 21000 * 50 Gwei = 1_050_000_000_000_000 wei + 31337 wei

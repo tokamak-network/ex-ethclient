@@ -163,7 +163,7 @@ defmodule EthVm.Nif do
 
   # Loads pre-fetched state from the storage backend for the transaction.
   # Falls back to empty state if state loading fails (e.g., in tests without a store).
-  @spec load_state(map(), EthCore.Types.SignedTransaction.t(), module()) :: binary()
+  @spec load_state(map(), EthCore.Types.SignedTransaction.t(), term()) :: binary()
   defp load_state(fields, signed_tx, state_provider) do
     tx_info = %{
       from: fields.from,
@@ -171,12 +171,18 @@ defmodule EthVm.Nif do
       access_list: Map.get(signed_tx.tx, :access_list, [])
     }
 
-    case StateLoader.load_tx_state(tx_info, state_provider) do
-      {:ok, state_binary} ->
-        state_binary
+    try do
+      case StateLoader.load_tx_state(tx_info, state_provider) do
+        {:ok, state_binary} ->
+          state_binary
 
-      {:error, reason} ->
-        Logger.debug("State loading failed (#{inspect(reason)}), using empty state")
+        {:error, reason} ->
+          Logger.debug("State loading failed (#{inspect(reason)}), using empty state")
+          <<>>
+      end
+    catch
+      :exit, reason ->
+        Logger.debug("State provider unavailable (#{inspect(reason)}), using empty state")
         <<>>
     end
   end

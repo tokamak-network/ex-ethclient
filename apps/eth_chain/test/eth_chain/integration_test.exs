@@ -32,7 +32,7 @@ defmodule EthChain.IntegrationTest do
       assert config.p2p_port == 30303
       assert config.rpc_enabled == true
       assert config.max_peers == 25
-      assert config.evm_module == EthVm.Mock
+      assert config.evm_module == EthVm.Nif
     end
 
     test "from_env applies overrides" do

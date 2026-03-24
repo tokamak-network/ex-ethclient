@@ -27,6 +27,7 @@ defmodule Mix.Tasks.EthChain.Start do
         strict: [
           port: :integer,
           rpc_port: :integer,
+          engine_port: :integer,
           datadir: :string,
           rpc: :boolean,
           bootnodes: :string
@@ -36,8 +37,13 @@ defmodule Mix.Tasks.EthChain.Start do
 
     config = EthChain.Config.from_env(opts)
 
+    # Generate/configure JWT secret for Engine API authentication
+    jwt_path = EthRpc.JwtSecret.ensure_secret(config.datadir)
+    EthRpc.JwtSecret.configure(jwt_path)
+
     Application.put_env(:eth_net, :port, config.p2p_port)
     Application.put_env(:eth_rpc, :port, config.rpc_port)
+    Application.put_env(:eth_rpc, :engine_port, config.engine_port)
 
     Mix.Task.run("app.start")
 
@@ -54,6 +60,8 @@ defmodule Mix.Tasks.EthChain.Start do
      Data dir:  #{config.datadir}
      P2P port:  #{config.p2p_port}
      RPC port:  #{config.rpc_port}
+     Engine:    #{config.engine_port}
+     JWT:       #{jwt_path}
      Head:      ##{inspect(head)}
     ====================================
     """)

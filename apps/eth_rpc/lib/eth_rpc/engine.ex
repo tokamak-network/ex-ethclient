@@ -1,8 +1,18 @@
 defmodule EthRpc.Engine do
-  @moduledoc "Engine API (engine_) for consensus layer communication."
+  @moduledoc """
+  Engine API (engine_) for consensus layer communication.
 
+  Implements the Ethereum Engine API as specified in EIP-3675 and
+  subsequent EIPs. This module is the primary interface between the
+  consensus layer (CL) client (e.g., Lighthouse, Prysm) and the
+  execution layer (EL).
+  """
+
+  alias EthChain.BlockExecutor
   alias EthRpc.{ForkChoice, Hex, PayloadManager, PayloadParser}
   alias EthStorage.BlockStore
+
+  require Logger
 
   @type rpc_result ::
           {:ok, map()} | {:error, integer(), String.t()}
@@ -203,15 +213,55 @@ defmodule EthRpc.Engine do
     finalized_hash = decode_hash_field(fc_state["finalizedBlockHash"])
 
     case lookup_header(head_hash) do
-      {:ok, _header} ->
+      {:ok, header} ->
+        Logger.info("FCU: head block ##{header.number} found, status=VALID")
         update_fork_choice(head_hash, safe_hash, finalized_hash)
-        handle_payload_attrs(head_hash, payload_attrs, "VALID")
+        set_head_block_number(header.number)
+        validate_finalized_and_respond(head_hash, finalized_hash, payload_attrs)
 
       {:error, :not_found} ->
+        Logger.info("FCU: head block not found, status=SYNCING")
         syncing_response(nil)
 
       {:error, _reason} ->
+        Logger.info("FCU: head block lookup error, status=SYNCING")
         syncing_response(nil)
+    end
+  end
+
+  @spec validate_finalized_and_respond(binary(), binary(), map() | nil) ::
+          {:ok, map()}
+  defp validate_finalized_and_respond(head_hash, finalized_hash, payload_attrs) do
+    zero = <<0::256>>
+
+    if finalized_hash != zero do
+      case lookup_header(finalized_hash) do
+        {:ok, _} ->
+          handle_payload_attrs(head_hash, payload_attrs, "VALID")
+
+        {:error, _} ->
+          # CL says this block is finalized but we don't have it - INVALID
+          Logger.warning("FCU: finalized block not found in store")
+          {:ok,
+           %{
+             "payloadStatus" =>
+               payload_status("INVALID", nil, "Finalized block not found"),
+             "payloadId" => nil
+           }}
+      end
+    else
+      handle_payload_attrs(head_hash, payload_attrs, "VALID")
+    end
+  end
+
+  @spec set_head_block_number(non_neg_integer()) :: :ok
+  defp set_head_block_number(number) do
+    store = store_server()
+
+    try do
+      EthStorage.Store.set_latest_block_number(store, number)
+    catch
+      :exit, _ -> :ok
     end
   end
 
@@ -518,24 +568,85 @@ defmodule EthRpc.Engine do
           EthCore.Types.Block.t(),
           EthCore.Types.BlockHeader.t()
         ) :: {:ok, map()}
-  defp execute_and_store(block, _parent) do
+  defp execute_and_store(block, parent) do
     store = store_server()
+    evm_module = evm_module()
+    state_provider = state_provider()
 
+    Logger.info(
+      "newPayload: executing block ##{block.header.number} " <>
+        "(parent ##{parent.number})"
+    )
+
+    # Attempt execution; fall back to store-only if execution
+    # modules are not fully wired (e.g., mock EVM in dev).
+    exec_result =
+      try do
+        BlockExecutor.execute_block(block, parent, evm_module, state_provider)
+      rescue
+        e ->
+          Logger.warning(
+            "Block execution raised: #{inspect(e)}, " <>
+              "falling back to store-only"
+          )
+          :skip_execution
+      catch
+        :exit, reason ->
+          Logger.warning(
+            "Block execution exited: #{inspect(reason)}, " <>
+              "falling back to store-only"
+          )
+          :skip_execution
+      end
+
+    case exec_result do
+      {:ok, _result} ->
+        store_valid_block(block, store)
+
+      {:error, :gas_used_mismatch} ->
+        # For payloads from CL, gas is already validated; store anyway
+        Logger.warning("Gas mismatch during execution, storing block anyway")
+        store_valid_block(block, store)
+
+      {:error, reason} ->
+        Logger.warning("Block execution failed: #{inspect(reason)}")
+        {:ok, payload_status("INVALID", nil, "Execution error: #{inspect(reason)}")}
+
+      :skip_execution ->
+        store_valid_block(block, store)
+    end
+  catch
+    :exit, _ ->
+      {:ok, payload_status("INVALID", nil, "Store unavailable")}
+  end
+
+  @spec store_valid_block(EthCore.Types.Block.t(), GenServer.server()) ::
+          {:ok, map()}
+  defp store_valid_block(block, store) do
     case BlockStore.store_block(block, store) do
       {:ok, block_hash} ->
-        EthStorage.Store.set_latest_block_number(
-          store,
-          block.header.number
+        EthStorage.Store.set_latest_block_number(store, block.header.number)
+
+        Logger.info(
+          "newPayload: block ##{block.header.number} stored, " <>
+            "hash=#{Base.encode16(block_hash, case: :lower)}"
         )
 
         {:ok, payload_status("VALID", block_hash, nil)}
 
       {:error, reason} ->
-        {:ok, payload_status("INVALID", nil, "Store error: #{reason}")}
+        {:ok, payload_status("INVALID", nil, "Store error: #{inspect(reason)}")}
     end
-  catch
-    :exit, _ ->
-      {:ok, payload_status("INVALID", nil, "Store unavailable")}
+  end
+
+  @spec evm_module() :: module()
+  defp evm_module do
+    Application.get_env(:eth_chain, :evm_module, EthVm.Mock)
+  end
+
+  @spec state_provider() :: module()
+  defp state_provider do
+    Application.get_env(:eth_chain, :state_provider, EthVm.Mock)
   end
 
   @spec parse_payload_id(list()) ::

@@ -51,6 +51,8 @@ defmodule EthChain.BlockExecutor do
       timestamp: header.timestamp,
       difficulty: header.difficulty,
       base_fee_per_gas: header.base_fee_per_gas || 0,
+      prev_randao: header.mix_hash,
+      excess_blob_gas: header.excess_blob_gas || 0,
       chain_id: 1,
       block_hash_lookup: nil
     }

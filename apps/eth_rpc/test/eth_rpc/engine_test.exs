@@ -177,11 +177,16 @@ defmodule EthRpc.EngineTest do
   # --- Test helpers ---
 
   @spec build_test_block(non_neg_integer()) :: Block.t()
+  @empty_ommers_hash EthCrypto.Hash.keccak256(ExRLP.encode([]))
+
   defp build_test_block(number) do
+    # Use a fixed base timestamp so child blocks can reliably be later
+    base_ts = 1_700_000_000 + number * 12
+
     %Block{
       header: %BlockHeader{
         parent_hash: @zero_hash,
-        ommers_hash: @zero_hash,
+        ommers_hash: @empty_ommers_hash,
         coinbase: <<0::160>>,
         state_root: @zero_hash,
         transactions_root: @zero_hash,
@@ -191,7 +196,7 @@ defmodule EthRpc.EngineTest do
         number: number,
         gas_limit: 30_000_000,
         gas_used: 0,
-        timestamp: System.system_time(:second),
+        timestamp: base_ts,
         extra_data: <<>>,
         mix_hash: @zero_hash,
         nonce: <<0::64>>,
@@ -207,6 +212,9 @@ defmodule EthRpc.EngineTest do
 
   @spec build_execution_payload(non_neg_integer(), binary()) :: map()
   defp build_execution_payload(number, parent_hash) do
+    # Timestamp must be strictly greater than parent (1_700_000_000)
+    child_ts = 1_700_000_000 + number * 12
+
     %{
       "parentHash" => Hex.encode_data(parent_hash),
       "feeRecipient" => Hex.encode_data(<<0::160>>),
@@ -217,7 +225,7 @@ defmodule EthRpc.EngineTest do
       "blockNumber" => Hex.encode_quantity(number),
       "gasLimit" => Hex.encode_quantity(30_000_000),
       "gasUsed" => Hex.encode_quantity(0),
-      "timestamp" => Hex.encode_quantity(System.system_time(:second)),
+      "timestamp" => Hex.encode_quantity(child_ts),
       "extraData" => "0x",
       "baseFeePerGas" => Hex.encode_quantity(1_000_000_000),
       "blockHash" => Hex.encode_data(@zero_hash),

@@ -20,7 +20,7 @@ defmodule EthChain.Config do
             rpc_port: 8545,
             rpc_enabled: true,
             max_peers: 25,
-            evm_module: EthVm.Mock,
+            evm_module: EthVm.Nif,
             bootnodes: []
 
   @doc """

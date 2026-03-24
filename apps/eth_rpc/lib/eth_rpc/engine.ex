@@ -1,6 +1,7 @@
 defmodule EthRpc.Engine do
   @moduledoc "Engine API (engine_) for consensus layer communication."
 
+  alias EthChain.BlockPipeline
   alias EthRpc.{ForkChoice, Hex, PayloadManager, PayloadParser}
   alias EthStorage.BlockStore
 
@@ -521,13 +522,8 @@ defmodule EthRpc.Engine do
   defp execute_and_store(block, _parent) do
     store = store_server()
 
-    case BlockStore.store_block(block, store) do
+    case BlockPipeline.process_block(block, store) do
       {:ok, block_hash} ->
-        EthStorage.Store.set_latest_block_number(
-          store,
-          block.header.number
-        )
-
         {:ok, payload_status("VALID", block_hash, nil)}
 
       {:error, reason} ->

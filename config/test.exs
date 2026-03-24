@@ -10,7 +10,9 @@ config :eth_storage,
   backend_opts: [],
   start_services: false
 
-config :eth_chain, start_services: false
+config :eth_chain,
+  start_services: false,
+  evm_module: EthVm.Mock
 
 # Don't start the Bandit HTTP server in tests
 config :eth_rpc, start_server: false

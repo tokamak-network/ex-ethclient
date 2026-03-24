@@ -70,6 +70,8 @@ defmodule EthVm.Types do
             timestamp: non_neg_integer(),
             difficulty: non_neg_integer(),
             base_fee_per_gas: non_neg_integer(),
+            prev_randao: binary() | nil,
+            excess_blob_gas: non_neg_integer(),
             chain_id: non_neg_integer(),
             block_hash_lookup: (non_neg_integer() -> binary() | nil)
           }
@@ -81,6 +83,8 @@ defmodule EthVm.Types do
       :timestamp,
       difficulty: 0,
       base_fee_per_gas: 0,
+      prev_randao: nil,
+      excess_blob_gas: 0,
       chain_id: 1,
       block_hash_lookup: nil
     ]

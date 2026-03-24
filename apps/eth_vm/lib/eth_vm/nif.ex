@@ -11,30 +11,48 @@ defmodule EthVm.Nif do
   - EIP-1559 (Type 2) with dynamic fees
   - EIP-4844 (Type 3) with blob gas
   - EIP-7702 (Type 4) with authorization lists
+
+  Uses `execute_tx_v3` which provides full block context (coinbase,
+  timestamp, base fee, prevrandao) and loads pre-fetched account state
+  from the storage backend.
   """
 
   @behaviour EthVm.Evm
 
   alias EthVm.Native
+  alias EthVm.StateLoader
   alias EthVm.Types.{BlockExecutionResult, ExecutionResult}
+
+  require Logger
 
   @impl true
   @doc """
   Executes a single signed transaction via the Rust NIF.
 
-  Uses execute_tx_v2 which provides full transaction type support
-  including access lists, EIP-1559 fees, blob transactions, and EIP-7702.
+  Uses execute_tx_v3 which provides full block context and pre-loaded
+  account state from the storage backend. The SpecId is determined
+  automatically from block number and timestamp.
   """
   @spec execute_transaction(
           EthVm.Types.Environment.t(),
           EthCore.Types.SignedTransaction.t(),
           module()
         ) :: {:ok, ExecutionResult.t()} | {:error, term()}
-  def execute_transaction(_env, signed_tx, _state_provider) do
+  def execute_transaction(env, signed_tx, state_provider) do
     fields = extract_tx_fields(signed_tx)
 
+    # Load pre-fetched state from the storage backend
+    state_data = load_state(fields, signed_tx, state_provider)
+
     result =
-      Native.execute_tx_v2(
+      Native.execute_tx_v3(
+        env.number || 0,
+        env.timestamp || 0,
+        env.coinbase || <<0::160>>,
+        env.base_fee_per_gas || 0,
+        env.prev_randao || <<0::256>>,
+        env.gas_limit || 30_000_000,
+        env.excess_blob_gas || 0,
         fields.tx_type,
         fields.from,
         fields.to,
@@ -44,9 +62,8 @@ defmodule EthVm.Nif do
         fields.max_priority_fee,
         fields.max_fee_per_blob_gas,
         fields.data,
-        fields.code,
         fields.nonce,
-        fields.balance,
+        state_data,
         fields.access_list_data,
         fields.blob_hashes_data
       )
@@ -65,6 +82,7 @@ defmodule EthVm.Nif do
         {:ok, execution_result}
 
       {:error, reason} ->
+        Logger.warning("NIF execution error: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -85,7 +103,10 @@ defmodule EthVm.Nif do
       coinbase: block.header.coinbase,
       gas_limit: block.header.gas_limit,
       number: block.header.number,
-      timestamp: block.header.timestamp
+      timestamp: block.header.timestamp,
+      base_fee_per_gas: block.header.base_fee_per_gas || 0,
+      prev_randao: block.header.mix_hash,
+      excess_blob_gas: block.header.excess_blob_gas || 0
     }
 
     initial_state = %{}
@@ -135,13 +156,32 @@ defmodule EthVm.Nif do
 
   @spec merge_state_changes(map(), ExecutionResult.t()) :: map()
   defp merge_state_changes(current_state, %ExecutionResult{} = _exec_result) do
-    # Merge state changes from execution result into current accumulated state.
-    # The NIF execution results may include state_changes with per-address
-    # nonce, balance, code, and storage updates. Deep-merge storage maps.
+    # State changes from the NIF are handled by the storage layer.
+    # The NIF loads fresh state from storage for each transaction.
     current_state
   end
 
-  # Extracts all transaction fields needed for execute_tx_v2 from a signed transaction.
+  # Loads pre-fetched state from the storage backend for the transaction.
+  # Falls back to empty state if state loading fails (e.g., in tests without a store).
+  @spec load_state(map(), EthCore.Types.SignedTransaction.t(), module()) :: binary()
+  defp load_state(fields, signed_tx, state_provider) do
+    tx_info = %{
+      from: fields.from,
+      to: if(fields.to == <<>>, do: nil, else: fields.to),
+      access_list: Map.get(signed_tx.tx, :access_list, [])
+    }
+
+    case StateLoader.load_tx_state(tx_info, state_provider) do
+      {:ok, state_binary} ->
+        state_binary
+
+      {:error, reason} ->
+        Logger.debug("State loading failed (#{inspect(reason)}), using empty state")
+        <<>>
+    end
+  end
+
+  # Extracts all transaction fields needed for execute_tx_v3 from a signed transaction.
   @spec extract_tx_fields(EthCore.Types.SignedTransaction.t()) :: map()
   defp extract_tx_fields(signed_tx) do
     tx = signed_tx.tx
@@ -186,9 +226,6 @@ defmodule EthVm.Nif do
         hashes -> encode_blob_hashes(hashes)
       end
 
-    # Balance: give sender a generous balance since balance_check is disabled
-    balance = encode_u256(10_000_000_000_000_000_000)
-
     %{
       tx_type: type_byte,
       from: from,
@@ -199,9 +236,7 @@ defmodule EthVm.Nif do
       max_priority_fee: max_priority_fee,
       max_fee_per_blob_gas: max_fee_per_blob_gas,
       data: data,
-      code: <<>>,
       nonce: nonce,
-      balance: balance,
       access_list_data: access_list_data,
       blob_hashes_data: blob_hashes_data
     }

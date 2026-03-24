@@ -8,4 +8,8 @@ config :eth_storage,
   backend: EthStorage.Backend.Memory,
   backend_opts: []
 
+config :eth_dashboard,
+  port: 4000,
+  start_server: false
+
 import_config "#{config_env()}.exs"

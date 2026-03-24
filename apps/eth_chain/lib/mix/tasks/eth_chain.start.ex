@@ -6,6 +6,7 @@ defmodule Mix.Tasks.EthChain.Start do
 
       mix eth_chain.start [--network NETWORK] [--port PORT] [--rpc-port RPC_PORT]
                           [--datadir DIR] [--rpc BOOL] [--bootnodes ENODES]
+                          [--dashboard] [--dashboard-port PORT]
 
   ## Options
 
@@ -15,6 +16,8 @@ defmodule Mix.Tasks.EthChain.Start do
   - `--datadir` - Data directory (default: ./data)
   - `--rpc` - Enable JSON-RPC server (default: true)
   - `--bootnodes` - Comma-separated enode URLs
+  - `--dashboard` - Enable web dashboard (default: false)
+  - `--dashboard-port` - Dashboard HTTP port (default: 4000)
   """
 
   use Mix.Task
@@ -32,7 +35,9 @@ defmodule Mix.Tasks.EthChain.Start do
           engine_port: :integer,
           datadir: :string,
           rpc: :boolean,
-          bootnodes: :string
+          bootnodes: :string,
+          dashboard: :boolean,
+          dashboard_port: :integer
         ],
         aliases: [p: :port, r: :rpc_port, d: :datadir, n: :network]
       )
@@ -67,11 +72,25 @@ defmodule Mix.Tasks.EthChain.Start do
     # Enable RPC servers (disabled by default in config.exs)
     Application.put_env(:eth_rpc, :start_server, true)
 
+    # Enable dashboard if --dashboard flag is passed
+    if Keyword.get(opts, :dashboard, false) do
+      dashboard_port = Keyword.get(opts, :dashboard_port, 4000)
+      Application.put_env(:eth_dashboard, :start_server, true)
+      Application.put_env(:eth_dashboard, :port, dashboard_port)
+    end
+
     Mix.Task.run("app.start")
 
     {:ok, _pid} = EthChain.NodeSupervisor.start_link(config)
 
     head = fetch_head()
+
+    dashboard_info =
+      if Keyword.get(opts, :dashboard, false) do
+        " Dashboard: http://localhost:#{Application.get_env(:eth_dashboard, :port, 4000)}\n"
+      else
+        ""
+      end
 
     Mix.shell().info("""
 
@@ -86,7 +105,7 @@ defmodule Mix.Tasks.EthChain.Start do
      Engine:    #{config.engine_port}
      JWT:       #{jwt_path}
      Head:      ##{inspect(head)}
-    ====================================
+    #{dashboard_info}====================================
     """)
 
     unless iex_running?() do

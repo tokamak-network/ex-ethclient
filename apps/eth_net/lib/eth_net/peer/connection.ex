@@ -333,8 +333,17 @@ defmodule EthNet.Peer.Connection do
     {:ok, frame, codec} = FrameCodec.encode(state.codec, msg_code, payload)
 
     case :gen_tcp.send(state.socket, frame) do
-      :ok -> {:ok, %{state | codec: codec}}
-      {:error, reason} -> {:error, reason}
+      :ok ->
+        try do
+          EthDashboard.Collector.report_message(:sent)
+        catch
+          _, _ -> :ok
+        end
+
+        {:ok, %{state | codec: codec}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -438,6 +447,12 @@ defmodule EthNet.Peer.Connection do
   defp handle_active_data(state) do
     case FrameCodec.decode(state.codec, state.buffer) do
       {:ok, msg_code, payload, remaining, codec} ->
+        try do
+          EthDashboard.Collector.report_message(:received)
+        catch
+          _, _ -> :ok
+        end
+
         state = %{state | codec: codec, buffer: remaining}
         handle_message(msg_code, payload, state)
 

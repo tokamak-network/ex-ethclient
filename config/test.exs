@@ -16,3 +16,6 @@ config :eth_chain,
 
 # Don't start the Bandit HTTP server in tests
 config :eth_rpc, start_server: false
+
+# Don't start the dashboard HTTP server in tests (only Collector)
+config :eth_dashboard, start_server: false

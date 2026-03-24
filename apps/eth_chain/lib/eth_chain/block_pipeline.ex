@@ -37,6 +37,18 @@ defmodule EthChain.BlockPipeline do
          :ok <- index_transactions(block_hash, block, store),
          :ok <- Store.set_latest_block_number(store, block.header.number) do
       if mempool, do: Mempool.remove_block_transactions(block, mempool)
+
+      try do
+        EthDashboard.Collector.report_block(
+          block.header.number,
+          block_hash,
+          length(block.transactions),
+          block.header.gas_used
+        )
+      catch
+        _, _ -> :ok
+      end
+
       {:ok, block_hash}
     end
   end

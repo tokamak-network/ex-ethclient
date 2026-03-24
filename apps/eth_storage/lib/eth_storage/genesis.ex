@@ -1,5 +1,5 @@
 defmodule EthStorage.Genesis do
-  @moduledoc "Genesis block initialization for Ethereum mainnet."
+  @moduledoc "Genesis block initialization for Ethereum mainnet and Sepolia testnet."
 
   alias EthCore.Types.{Block, BlockHeader}
   alias EthStorage.{Encoding, Store}
@@ -31,6 +31,16 @@ defmodule EthStorage.Genesis do
 
   @mainnet_nonce <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42>>
 
+  # Sepolia genesis state root (empty state — Sepolia uses a pre-funded genesis)
+  @sepolia_state_root Base.decode16!(
+                        "5EB6E371A698B8D68F665192350FFCECBBBF322916F4B51BD79BB6887DA3F494",
+                        case: :upper
+                      )
+
+  @sepolia_extra_data <<0x53, 0x65, 0x70, 0x6F, 0x6C, 0x69, 0x61, 0x2C, 0x20, 0x41, 0x74,
+                        0x68, 0x65, 0x6E, 0x73, 0x2C, 0x20, 0x41, 0x74, 0x74, 0x69, 0x63,
+                        0x61, 0x2C, 0x20, 0x47, 0x72, 0x65, 0x65, 0x63, 0x65, 0x21>>
+
   @doc "Returns the mainnet genesis block header."
   @spec mainnet_header() :: BlockHeader.t()
   def mainnet_header do
@@ -53,6 +63,33 @@ defmodule EthStorage.Genesis do
     }
   end
 
+  @doc "Returns the Sepolia genesis block header."
+  @spec sepolia_header() :: BlockHeader.t()
+  def sepolia_header do
+    %BlockHeader{
+      parent_hash: @zero_hash,
+      ommers_hash: @empty_ommers_hash,
+      coinbase: @zero_address,
+      state_root: @sepolia_state_root,
+      transactions_root: @empty_trie_root,
+      receipts_root: @empty_trie_root,
+      logs_bloom: <<0::2048>>,
+      difficulty: 131_072,
+      number: 0,
+      gas_limit: 30_000_000,
+      gas_used: 0,
+      timestamp: 1_633_267_481,
+      extra_data: @sepolia_extra_data,
+      mix_hash: @zero_hash,
+      nonce: <<0::64>>
+    }
+  end
+
+  @doc "Returns the genesis block header for the given network."
+  @spec header(atom()) :: BlockHeader.t()
+  def header(:mainnet), do: mainnet_header()
+  def header(:sepolia), do: sepolia_header()
+
   @doc "Returns the mainnet genesis block."
   @spec mainnet_block() :: Block.t()
   def mainnet_block do
@@ -64,11 +101,38 @@ defmodule EthStorage.Genesis do
     }
   end
 
+  @doc "Returns the Sepolia genesis block."
+  @spec sepolia_block() :: Block.t()
+  def sepolia_block do
+    %Block{
+      header: sepolia_header(),
+      transactions: [],
+      ommers: [],
+      withdrawals: nil
+    }
+  end
+
+  @doc "Returns the genesis block for the given network."
+  @spec block(atom()) :: Block.t()
+  def block(:mainnet), do: mainnet_block()
+  def block(:sepolia), do: sepolia_block()
+
   @doc "Returns the hash of the mainnet genesis block."
   @spec mainnet_genesis_hash() :: <<_::256>>
   def mainnet_genesis_hash do
     Encoding.block_hash(mainnet_header())
   end
+
+  @doc "Returns the hash of the Sepolia genesis block."
+  @spec sepolia_genesis_hash() :: <<_::256>>
+  def sepolia_genesis_hash do
+    Encoding.block_hash(sepolia_header())
+  end
+
+  @doc "Returns the genesis hash for the given network."
+  @spec genesis_hash(atom()) :: <<_::256>>
+  def genesis_hash(:mainnet), do: mainnet_genesis_hash()
+  def genesis_hash(:sepolia), do: sepolia_genesis_hash()
 
   @doc """
   Initializes the store with the genesis block.
@@ -78,10 +142,18 @@ defmodule EthStorage.Genesis do
   """
   @spec initialize(GenServer.server()) :: :ok | {:error, term()}
   def initialize(store \\ Store) do
-    block = mainnet_block()
-    block_hash = Encoding.block_hash(block.header)
-    encoded_header = Encoding.encode_header(block.header)
-    encoded_body = Encoding.encode_body(block.transactions, block.ommers, block.withdrawals)
+    initialize(store, :mainnet)
+  end
+
+  @doc """
+  Initializes the store with the genesis block for the given network.
+  """
+  @spec initialize(GenServer.server(), atom()) :: :ok | {:error, term()}
+  def initialize(store, network) do
+    genesis = block(network)
+    block_hash = Encoding.block_hash(genesis.header)
+    encoded_header = Encoding.encode_header(genesis.header)
+    encoded_body = Encoding.encode_body(genesis.transactions, genesis.ommers, genesis.withdrawals)
 
     with :ok <- Store.put_block_header(store, block_hash, encoded_header),
          :ok <- Store.put_block_body(store, block_hash, encoded_body),

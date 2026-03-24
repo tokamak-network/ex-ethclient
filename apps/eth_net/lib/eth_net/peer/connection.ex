@@ -165,7 +165,8 @@ defmodule EthNet.Peer.Connection do
   end
 
   def handle_info(:send_status, state) do
-    {msg_code, payload} = Eth68.build_mainnet_status()
+    network = configured_network()
+    {msg_code, payload} = Eth68.build_status(network)
 
     case send_frame(state, msg_code, payload) do
       {:ok, state} ->
@@ -400,9 +401,10 @@ defmodule EthNet.Peer.Connection do
       "Peer: Remote network_id=#{status.network_id}, TD=#{status.total_difficulty}"
     )
 
-    # Validate genesis hash and network_id
-    expected_genesis = EthNet.Chain.genesis_hash(:mainnet)
-    expected_network = EthNet.Chain.network_id(:mainnet)
+    # Validate genesis hash and network_id against configured network
+    network = configured_network()
+    expected_genesis = EthNet.Chain.genesis_hash(network)
+    expected_network = EthNet.Chain.network_id(network)
 
     cond do
       status.network_id != expected_network ->
@@ -603,5 +605,10 @@ defmodule EthNet.Peer.Connection do
   defp send_disconnect(state, reason) do
     {code, payload} = P2P.encode_disconnect(reason)
     send_frame(state, code, payload)
+  end
+
+  @spec configured_network() :: atom()
+  defp configured_network do
+    Application.get_env(:eth_net, :network, :mainnet)
   end
 end

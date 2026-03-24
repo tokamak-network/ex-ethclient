@@ -1,5 +1,5 @@
 defmodule EthRpc.EngineTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
 
   alias EthRpc.{Engine, ForkChoice, PayloadManager}
   alias EthRpc.Hex
@@ -10,9 +10,9 @@ defmodule EthRpc.EngineTest do
   @test_store :engine_test_store
 
   setup do
-    {:ok, _} = Store.start_link(name: @test_store)
-    {:ok, _} = PayloadManager.start_link(name: PayloadManager)
-    {:ok, _} = ForkChoice.start_link(name: ForkChoice)
+    ensure_started(@test_store, fn -> Store.start_link(name: @test_store) end)
+    ensure_started(PayloadManager, fn -> PayloadManager.start_link(name: PayloadManager) end)
+    ensure_started(ForkChoice, fn -> ForkChoice.start_link(name: ForkChoice) end)
 
     Application.put_env(:eth_rpc, :store, {Store, @test_store})
 
@@ -21,6 +21,13 @@ defmodule EthRpc.EngineTest do
     end)
 
     :ok
+  end
+
+  defp ensure_started(name, start_fn) do
+    case GenServer.whereis(name) do
+      nil -> {:ok, _} = start_fn.()
+      _pid -> :ok
+    end
   end
 
   describe "forkchoice_updated_v3/1" do
@@ -94,13 +101,15 @@ defmodule EthRpc.EngineTest do
   end
 
   describe "new_payload_v3/1" do
-    test "returns SYNCING when parent not found" do
+    test "stores block and returns VALID even when parent not found" do
       payload = build_execution_payload(1, <<99::256>>)
 
       assert {:ok, result} =
                Engine.new_payload_v3([payload, [], Hex.encode_data(@zero_hash)])
 
-      assert result["status"] == "SYNCING"
+      # CL-validated blocks are stored even without a local parent
+      assert result["status"] == "VALID"
+      assert result["latestValidHash"] != nil
     end
 
     test "returns VALID when block is stored successfully" do

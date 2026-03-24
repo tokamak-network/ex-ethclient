@@ -1,5 +1,5 @@
 defmodule EthRpc.EngineVersionsTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
 
   alias EthRpc.{Engine, ForkChoice, PayloadManager}
   alias EthRpc.Hex
@@ -10,9 +10,9 @@ defmodule EthRpc.EngineVersionsTest do
   @test_store :engine_versions_test_store
 
   setup do
-    {:ok, _} = Store.start_link(name: @test_store)
-    {:ok, _} = PayloadManager.start_link(name: PayloadManager)
-    {:ok, _} = ForkChoice.start_link(name: ForkChoice)
+    ensure_started(@test_store, fn -> Store.start_link(name: @test_store) end)
+    ensure_started(PayloadManager, fn -> PayloadManager.start_link(name: PayloadManager) end)
+    ensure_started(ForkChoice, fn -> ForkChoice.start_link(name: ForkChoice) end)
 
     Application.put_env(:eth_rpc, :store, {Store, @test_store})
 
@@ -21,6 +21,13 @@ defmodule EthRpc.EngineVersionsTest do
     end)
 
     :ok
+  end
+
+  defp ensure_started(name, start_fn) do
+    case GenServer.whereis(name) do
+      nil -> {:ok, _} = start_fn.()
+      _pid -> :ok
+    end
   end
 
   describe "forkchoiceUpdatedV1" do
@@ -88,23 +95,25 @@ defmodule EthRpc.EngineVersionsTest do
   end
 
   describe "newPayloadV1" do
-    test "accepts minimal payload" do
+    test "accepts minimal payload and stores block without parent" do
       payload = build_execution_payload(1, <<99::256>>)
 
       assert {:ok, result} = Engine.new_payload_v1([payload])
-      assert result["status"] == "SYNCING"
+      # CL-validated blocks are stored even without a local parent
+      assert result["status"] == "VALID"
     end
   end
 
   describe "newPayloadV2" do
-    test "accepts payload with blob hashes" do
+    test "accepts payload with blob hashes and stores block without parent" do
       payload = build_execution_payload(1, <<99::256>>)
       blob_hashes = [Hex.encode_data(<<1::256>>)]
 
       assert {:ok, result} =
                Engine.new_payload_v2([payload, blob_hashes])
 
-      assert result["status"] == "SYNCING"
+      # CL-validated blocks are stored even without a local parent
+      assert result["status"] == "VALID"
     end
   end
 

@@ -166,7 +166,8 @@ defmodule EthNet.Peer.Connection do
 
   def handle_info(:send_status, state) do
     network = configured_network()
-    {msg_code, payload} = Eth68.build_status(network)
+    eth_ver = state.eth_version || 68
+    {msg_code, payload} = Eth68.build_status(network, 0, 0, eth_ver)
 
     case send_frame(state, msg_code, payload) do
       {:ok, state} ->

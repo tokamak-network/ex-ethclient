@@ -82,9 +82,11 @@ defmodule EthNet.Protocol.Eth68 do
 
   # --- Status ---
 
-  @doc "Encodes a Status message."
+  @doc "Encodes a Status message. Version defaults to 68 but can be overridden."
   @spec encode_status(map()) :: {non_neg_integer(), binary()}
   def encode_status(params) do
+    version = Map.get(params, :version, @eth_version)
+
     %{
       network_id: network_id,
       total_difficulty: td,
@@ -95,7 +97,7 @@ defmodule EthNet.Protocol.Eth68 do
 
     payload =
       ExRLP.encode([
-        @eth_version,
+        encode_integer(version),
         encode_integer(network_id),
         encode_integer(td),
         best_hash,
@@ -134,13 +136,14 @@ defmodule EthNet.Protocol.Eth68 do
   end
 
   @doc "Builds a Status message for the given network with the given head info."
-  @spec build_status(atom(), non_neg_integer(), non_neg_integer()) ::
+  @spec build_status(atom(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), binary()}
-  def build_status(network, head_block \\ 0, head_timestamp \\ 0) do
+  def build_status(network, head_block \\ 0, head_timestamp \\ 0, eth_version \\ @eth_version) do
     genesis_hash = EthNet.Chain.genesis_hash(network)
     fork_id = EthNet.ForkID.compute(network, head_block, head_timestamp)
 
     encode_status(%{
+      version: eth_version,
       network_id: EthNet.Chain.network_id(network),
       total_difficulty: EthNet.Chain.terminal_td(network),
       best_hash: genesis_hash,

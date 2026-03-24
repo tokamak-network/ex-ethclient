@@ -47,16 +47,23 @@ defmodule Mix.Tasks.EthChain.Start do
 
     config = EthChain.Config.from_env(opts)
 
-    # Generate/configure JWT secret for Engine API authentication
-    jwt_path = EthRpc.JwtSecret.ensure_secret(config.datadir)
-    EthRpc.JwtSecret.configure(jwt_path)
+    # Generate JWT secret file before app.start (plain file operations)
+    jwt_path = Path.join(config.datadir, "jwt.hex")
+    File.mkdir_p!(config.datadir)
+
+    unless File.exists?(jwt_path) do
+      secret = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
+      File.write!(jwt_path, secret)
+    end
+
+    # Read the secret and configure for Engine API auth
+    jwt_secret = jwt_path |> File.read!() |> String.trim()
 
     Application.put_env(:eth_net, :port, config.p2p_port)
     Application.put_env(:eth_net, :network, config.network)
     Application.put_env(:eth_rpc, :port, config.rpc_port)
     Application.put_env(:eth_rpc, :engine_port, config.engine_port)
-
-    Mix.Task.run("app.start")
+    Application.put_env(:eth_rpc, :jwt_secret, Base.decode16!(jwt_secret, case: :mixed))
 
     {:ok, _pid} = EthChain.NodeSupervisor.start_link(config)
 

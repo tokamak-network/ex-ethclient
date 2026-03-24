@@ -211,21 +211,28 @@ defmodule EthNet.Peer.Connection do
   def handle_info({:tcp, _socket, data}, %{state: :awaiting_status} = state) do
     state = %{state | buffer: state.buffer <> data}
 
-    case FrameCodec.decode(state.codec, state.buffer) do
-      {:ok, msg_code, payload, remaining, codec} ->
-        state = %{state | codec: codec, buffer: remaining}
-        handle_status_response(msg_code, payload, state)
+    try do
+      case FrameCodec.decode(state.codec, state.buffer) do
+        {:ok, msg_code, payload, remaining, codec} ->
+          state = %{state | codec: codec, buffer: remaining}
+          handle_status_response(msg_code, payload, state)
 
-      {:error, :insufficient_data} ->
-        :inet.setopts(state.socket, active: :once)
-        {:noreply, state}
+        {:error, :insufficient_data} ->
+          :inet.setopts(state.socket, active: :once)
+          {:noreply, state}
 
-      {:error, :incomplete_frame} ->
-        :inet.setopts(state.socket, active: :once)
-        {:noreply, state}
+        {:error, :incomplete_frame} ->
+          :inet.setopts(state.socket, active: :once)
+          {:noreply, state}
 
-      {:error, reason} ->
-        {:stop, {:status_decode_error, reason}, state}
+        {:error, reason} ->
+          Logger.warning("Peer: Status frame decode error: #{inspect(reason)}")
+          {:stop, {:status_decode_error, reason}, state}
+      end
+    rescue
+      e ->
+        Logger.warning("Peer: Status decode crashed: #{inspect(e)}")
+        {:stop, {:status_decode_crash, e}, state}
     end
   end
 

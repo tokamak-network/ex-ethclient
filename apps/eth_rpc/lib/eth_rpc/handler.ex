@@ -8,6 +8,8 @@ defmodule EthRpc.Handler do
 
   alias EthRpc.Eth
 
+  require Logger
+
   @doc """
   Processes a single JSON-RPC 2.0 request map and returns a response map.
   """
@@ -16,12 +18,22 @@ defmodule EthRpc.Handler do
     id = Map.get(request, "id")
     params = Map.get(request, "params", [])
 
-    case Eth.handle(method, params) do
-      {:ok, result} ->
-        success_response(id, result)
+    try do
+      case Eth.handle(method, params) do
+        {:ok, result} ->
+          success_response(id, result)
 
-      {:error, code, message} ->
-        error_response(id, code, message)
+        {:error, code, message} ->
+          error_response(id, code, message)
+      end
+    rescue
+      e ->
+        Logger.error(
+          "RPC handler crashed for #{method}: #{inspect(e)}\n" <>
+            "#{Exception.format_stacktrace(__STACKTRACE__)}"
+        )
+
+        error_response(id, -32603, "Internal error")
     end
   end
 

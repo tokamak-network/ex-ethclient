@@ -14,10 +14,12 @@ defmodule EthRpc.PayloadParser do
   def parse_execution_payload(payload) when is_map(payload) do
     with {:ok, header} <- parse_header(payload),
          {:ok, withdrawals} <- parse_withdrawals(payload) do
+      transactions = parse_transactions(payload)
+
       {:ok,
        %Block{
          header: header,
-         transactions: [],
+         transactions: transactions,
          ommers: [],
          withdrawals: withdrawals
        }}
@@ -65,6 +67,22 @@ defmodule EthRpc.PayloadParser do
   end
 
   # --- Private ---
+
+  @spec parse_transactions(map()) :: [binary()]
+  defp parse_transactions(%{"transactions" => txs}) when is_list(txs) do
+    Enum.flat_map(txs, fn
+      hex when is_binary(hex) ->
+        case Hex.decode_data(hex) do
+          {:ok, raw} -> [raw]
+          _ -> []
+        end
+
+      _ ->
+        []
+    end)
+  end
+
+  defp parse_transactions(_), do: []
 
   @spec parse_header(map()) ::
           {:ok, BlockHeader.t()} | {:error, term()}

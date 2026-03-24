@@ -113,7 +113,7 @@ defmodule EthRpc.EngineIntegrationTest do
       assert gp_result["shouldOverrideBuilder"] == false
     end
 
-    test "newPayloadV3 returns SYNCING for unknown parent" do
+    test "newPayloadV3 stores block even without local parent" do
       payload = build_execution_payload(1, <<99::256>>, 1_000_000)
 
       assert {:ok, result} =
@@ -123,8 +123,9 @@ defmodule EthRpc.EngineIntegrationTest do
                  Hex.encode_data(@zero_hash)
                ])
 
-      assert result["status"] == "SYNCING"
-      assert result["latestValidHash"] == nil
+      # CL-validated blocks are stored even without a local parent
+      assert result["status"] == "VALID"
+      assert result["latestValidHash"] != nil
     end
 
     test "forkchoiceUpdatedV3 returns SYNCING for unknown head" do

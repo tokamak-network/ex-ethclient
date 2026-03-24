@@ -40,6 +40,8 @@ defmodule EthNet.Peer.Manager do
   @impl true
   def init(opts) do
     max_peers = Keyword.get(opts, :max_peers, @max_peers)
+    # Connect to bootnodes immediately via TCP (they are known mainnet peers)
+    Process.send_after(self(), :connect_bootnodes, 1_000)
     Process.send_after(self(), :try_connect, @connect_interval)
     {:ok, %__MODULE__{max_peers: max_peers}}
   end
@@ -95,6 +97,12 @@ defmodule EthNet.Peer.Manager do
     {:noreply, state}
   end
 
+  def handle_info(:connect_bootnodes, state) do
+    Logger.info("PeerManager: Connecting directly to bootnodes")
+    state = connect_to_bootnodes(state)
+    {:noreply, state}
+  end
+
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
     connected = Map.delete(state.connected, pid)
 
@@ -128,6 +136,57 @@ defmodule EthNet.Peer.Manager do
   end
 
   # --- Private ---
+
+  defp connect_to_bootnodes(state) do
+    bootnodes = EthNet.Chain.bootnodes(:mainnet)
+
+    Enum.reduce(bootnodes, state, fn enode_uri, acc ->
+      case parse_enode(enode_uri) do
+        {:ok, node_id, ip, port} ->
+          if MapSet.member?(acc.connecting, node_id) do
+            acc
+          else
+            Logger.info("PeerManager: Direct connect to bootnode #{:inet.ntoa(ip)}:#{port}")
+
+            case ConnectionSupervisor.start_connection(ip: ip, port: port, node_id: node_id) do
+              {:ok, _pid} ->
+                %{acc | connecting: MapSet.put(acc.connecting, node_id)}
+
+              {:error, reason} ->
+                Logger.debug("PeerManager: Bootnode connect failed: #{inspect(reason)}")
+                acc
+            end
+          end
+
+        :error ->
+          Logger.debug("PeerManager: Skipping invalid enode: #{String.slice(enode_uri, 0, 40)}...")
+          acc
+      end
+    end)
+  end
+
+  defp parse_enode(uri) do
+    case Regex.run(~r/enode:\/\/([0-9a-fA-F]+)@([^:]+):(\d+)/, uri) do
+      [_, hex_id, ip_str, port_str] ->
+        with {:ok, ip} <- :inet.parse_address(String.to_charlist(ip_str)),
+             {:ok, node_id} <- safe_decode16(hex_id) do
+          {:ok, node_id, ip, String.to_integer(port_str)}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp safe_decode16(hex) do
+    try do
+      {:ok, Base.decode16!(hex, case: :mixed)}
+    rescue
+      _ -> :error
+    end
+  end
 
   defp attempt_connections(state) do
     available_slots = state.max_peers - map_size(state.connected) - MapSet.size(state.connecting)

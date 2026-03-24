@@ -11,6 +11,8 @@ defmodule EthRpc.EngineRouter do
 
   alias EthRpc.{Handler, JwtAuth}
 
+  require Logger
+
   plug(JwtAuth)
   plug(:match)
   plug(:dispatch)
@@ -18,6 +20,8 @@ defmodule EthRpc.EngineRouter do
   post "/" do
     with {:ok, body, conn} <- Plug.Conn.read_body(conn),
          {:ok, decoded} <- Jason.decode(body) do
+      method = if is_map(decoded), do: decoded["method"], else: "batch"
+      Logger.info("Engine API request: #{method}")
       handle_decoded(conn, decoded)
     else
       {:error, %Jason.DecodeError{}} ->

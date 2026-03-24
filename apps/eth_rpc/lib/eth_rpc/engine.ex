@@ -168,7 +168,7 @@ defmodule EthRpc.Engine do
          "code" => "EE",
          "name" => "ExEthclient",
          "version" => "0.1.0",
-         "commit" => "0x0000000000000000"
+         "commit" => "0x00000000"
        }
      ]}
   end

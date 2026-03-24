@@ -64,6 +64,10 @@ defmodule Mix.Tasks.EthChain.Start do
     Application.put_env(:eth_rpc, :port, config.rpc_port)
     Application.put_env(:eth_rpc, :engine_port, config.engine_port)
     Application.put_env(:eth_rpc, :jwt_secret, Base.decode16!(jwt_secret, case: :mixed))
+    # Enable RPC servers (disabled by default in config.exs)
+    Application.put_env(:eth_rpc, :start_server, true)
+
+    Mix.Task.run("app.start")
 
     {:ok, _pid} = EthChain.NodeSupervisor.start_link(config)
 

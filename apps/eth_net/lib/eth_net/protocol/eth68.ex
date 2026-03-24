@@ -130,12 +130,19 @@ defmodule EthNet.Protocol.Eth68 do
   @spec build_mainnet_status(non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), binary()}
   def build_mainnet_status(head_block \\ 0, head_timestamp \\ 0) do
-    genesis_hash = EthNet.Chain.genesis_hash(:mainnet)
-    fork_id = EthNet.ForkID.compute(:mainnet, head_block, head_timestamp)
+    build_status(:mainnet, head_block, head_timestamp)
+  end
+
+  @doc "Builds a Status message for the given network with the given head info."
+  @spec build_status(atom(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), binary()}
+  def build_status(network, head_block \\ 0, head_timestamp \\ 0) do
+    genesis_hash = EthNet.Chain.genesis_hash(network)
+    fork_id = EthNet.ForkID.compute(network, head_block, head_timestamp)
 
     encode_status(%{
-      network_id: EthNet.Chain.network_id(:mainnet),
-      total_difficulty: EthNet.Chain.terminal_td(:mainnet),
+      network_id: EthNet.Chain.network_id(network),
+      total_difficulty: EthNet.Chain.terminal_td(network),
       best_hash: genesis_hash,
       genesis_hash: genesis_hash,
       fork_id: fork_id

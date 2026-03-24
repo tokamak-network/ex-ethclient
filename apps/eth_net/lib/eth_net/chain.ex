@@ -1,6 +1,6 @@
 defmodule EthNet.Chain do
   @moduledoc """
-  Ethereum chain constants for mainnet.
+  Ethereum chain constants for mainnet and Sepolia testnet.
   Genesis hash, network ID, fork schedule, terminal total difficulty, and bootnodes.
   """
 
@@ -47,23 +47,74 @@ defmodule EthNet.Chain do
     "enode://c1f8b7c2ac4453271fa07d8e9ecf9a2e8285aa0cefb6fc271c2c52ad5beebbcb8d48d31b40a3b4f7dff5e35707e3bdca000af432e8089915f42f26e1ff3a09e1@167.99.31.227:30303"
   ]
 
+  # --- Sepolia testnet ---
+
+  @sepolia_genesis_hash Base.decode16!(
+                          "25A5CC106EEA7138ACAB33231D7160D69CB777EE0C2C553FCDDF5138993E6DD9",
+                          case: :upper
+                        )
+  @sepolia_network_id 11_155_111
+
+  # Terminal total difficulty for The Merge on Sepolia
+  @sepolia_terminal_td 17_000_000_000_000_000
+
+  # Sepolia had no pre-merge block-based forks (launched post-Merge-ready)
+  @sepolia_block_forks []
+
+  # Post-merge forks use timestamps
+  @sepolia_time_forks [
+    {:shanghai, 1_677_557_088},
+    {:cancun, 1_706_655_072}
+  ]
+
+  @sepolia_bootnodes [
+    "enode://9246d00bc8fd1742e5ad2428b80fc4dc45d786283e05ef6edbd9002cbc335d40998444732fbe921cb88e1d2c73d1b1de53bae6a2237996e9bfe14f871baf7571@18.168.182.86:30303",
+    "enode://ec66ddcf1a974950bd4c782789a7e04f8aa7110a72569b6e65fcd51e937e74eed303b1ea734e4d19cfaec9fbff9b6ee65bf31dcb50ba79acce9dd63a6aca61c7@52.14.151.177:30303"
+  ]
+
+  # --- Public API ---
+
+  @doc "Returns the genesis hash for the given network."
+  @spec genesis_hash(atom()) :: <<_::256>>
   def genesis_hash(:mainnet), do: @mainnet_genesis_hash
+  def genesis_hash(:sepolia), do: @sepolia_genesis_hash
+
+  @doc "Returns the network ID for the given network."
+  @spec network_id(atom()) :: non_neg_integer()
   def network_id(:mainnet), do: @mainnet_network_id
+  def network_id(:sepolia), do: @sepolia_network_id
+
+  @doc "Returns the terminal total difficulty for the given network."
+  @spec terminal_td(atom()) :: non_neg_integer()
   def terminal_td(:mainnet), do: @mainnet_terminal_td
+  def terminal_td(:sepolia), do: @sepolia_terminal_td
+
+  @doc "Returns the block-based fork schedule for the given network."
+  @spec block_forks(atom()) :: [{atom(), non_neg_integer()}]
   def block_forks(:mainnet), do: @mainnet_block_forks
+  def block_forks(:sepolia), do: @sepolia_block_forks
+
+  @doc "Returns the timestamp-based fork schedule for the given network."
+  @spec time_forks(atom()) :: [{atom(), non_neg_integer()}]
   def time_forks(:mainnet), do: @mainnet_time_forks
+  def time_forks(:sepolia), do: @sepolia_time_forks
+
+  @doc "Returns the bootnode enode URLs for the given network."
+  @spec bootnodes(atom()) :: [String.t()]
   def bootnodes(:mainnet), do: @mainnet_bootnodes
+  def bootnodes(:sepolia), do: @sepolia_bootnodes
 
   @doc "Returns all fork values in order: block-based then timestamp-based."
-  def all_fork_values(:mainnet) do
+  @spec all_fork_values(atom()) :: {[non_neg_integer()], [non_neg_integer()]}
+  def all_fork_values(network) do
     block_values =
-      @mainnet_block_forks
+      block_forks(network)
       |> Enum.map(&elem(&1, 1))
       |> Enum.uniq()
       |> Enum.sort()
 
     time_values =
-      @mainnet_time_forks
+      time_forks(network)
       |> Enum.map(&elem(&1, 1))
       |> Enum.uniq()
       |> Enum.sort()

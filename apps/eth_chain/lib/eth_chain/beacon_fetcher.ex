@@ -299,26 +299,21 @@ defmodule EthChain.BeaconFetcher do
     try do
       result = EthRpc.Engine.new_payload_v4(params)
 
-      case result do
-        {:ok, %{"status" => "VALID"}} ->
-          Logger.info("BeaconFetcher: block ##{block_number} -> VALID")
-          update_fork_choice(block_hash)
-          report_engine("newPayload", "VALID")
+      # Extract status from any response format
+      status = extract_status(result)
+      Logger.info("BeaconFetcher: block ##{block_number} -> #{status}")
+      report_engine("newPayload", status)
+
+      if status == "VALID" do
+        update_fork_choice(block_hash)
+      end
+
+      case status do
+        s when s in ["VALID", "SYNCING"] ->
           %{state | last_block_number: block_number}
 
-        {:ok, %{"status" => status}} ->
-          Logger.info("BeaconFetcher: block ##{block_number} -> #{status}")
-          report_engine("newPayload", status)
+        _ ->
           %{state | last_block_number: block_number}
-
-        {:ok, %{"payloadStatus" => %{"status" => status}}} ->
-          Logger.info("BeaconFetcher: block ##{block_number} -> #{status}")
-          report_engine("newPayload", status)
-          %{state | last_block_number: block_number}
-
-        other ->
-          Logger.warning("BeaconFetcher: unexpected result: #{inspect(other)}")
-          state
       end
     rescue
       e ->
@@ -326,6 +321,14 @@ defmodule EthChain.BeaconFetcher do
         state
     end
   end
+
+  defp extract_status({:ok, %{"status" => s}}), do: s
+  defp extract_status({:ok, %{"payloadStatus" => %{"status" => s}}}), do: s
+  defp extract_status({:ok, map}) when is_map(map) do
+    # Try to find status in any nested structure
+    map["status"] || get_in(map, ["payloadStatus", "status"]) || "UNKNOWN"
+  end
+  defp extract_status(_), do: "UNKNOWN"
 
   @spec update_fork_choice(String.t() | nil) :: :ok
   defp update_fork_choice(nil), do: :ok

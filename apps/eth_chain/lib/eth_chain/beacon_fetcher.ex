@@ -337,10 +337,19 @@ defmodule EthChain.BeaconFetcher do
   @spec update_fork_choice(String.t() | nil) :: :ok
   defp update_fork_choice(nil), do: :ok
 
-  # Beacon API returns snake_case keys, Engine API expects camelCase
+  # Fields that Engine API expects as hex quantities (not hashes/addresses)
+  @quantity_fields MapSet.new([
+    "blockNumber", "gasLimit", "gasUsed", "timestamp", "baseFeePerGas",
+    "blobGasUsed", "excessBlobGas"
+  ])
+
+  # Beacon API returns snake_case keys with decimal values.
+  # Engine API expects camelCase keys with "0x..." hex values.
   defp to_camel_case(map) when is_map(map) do
     Map.new(map, fn {k, v} ->
-      {snake_to_camel(k), v}
+      camel_key = snake_to_camel(k)
+      value = if MapSet.member?(@quantity_fields, camel_key), do: to_hex(v), else: v
+      {camel_key, value}
     end)
   end
 
@@ -351,6 +360,12 @@ defmodule EthChain.BeaconFetcher do
       _ -> key
     end
   end
+
+  defp to_hex(v) when is_integer(v), do: "0x" <> Integer.to_string(v, 16)
+  defp to_hex(v) when is_binary(v) do
+    if String.starts_with?(v, "0x"), do: v, else: "0x" <> Integer.to_string(String.to_integer(v), 16)
+  end
+  defp to_hex(v), do: v
 
   defp update_fork_choice(block_hash) do
     zero_hash = "0x" <> String.duplicate("0", 64)

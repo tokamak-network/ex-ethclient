@@ -298,6 +298,7 @@ defmodule EthChain.BeaconFetcher do
 
     try do
       result = EthRpc.Engine.new_payload_v4(params)
+      Logger.info("BeaconFetcher: raw engine result: #{inspect(result)}")
 
       # Extract status from any response format
       status = extract_status(result)

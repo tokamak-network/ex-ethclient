@@ -20,10 +20,12 @@ defmodule EthChain.BeaconFetcher do
   require Logger
 
   @slot_time 12_000
+  @batch_delay 500
   @default_endpoint "https://ethereum-sepolia-beacon-api.publicnode.com"
   @initial_delay 2_000
   @http_timeout 10_000
   @connect_timeout 5_000
+  @batch_size 10
 
   @type status :: %{
           last_slot: non_neg_integer(),
@@ -37,6 +39,9 @@ defmodule EthChain.BeaconFetcher do
   defstruct endpoint: @default_endpoint,
             last_slot: 0,
             last_block_number: 0,
+            head_slot: 0,
+            blocks_stored: 0,
+            syncing: false,
             network: :sepolia,
             running: true,
             errors: 0
@@ -79,8 +84,42 @@ defmodule EthChain.BeaconFetcher do
 
   @impl true
   def handle_info(:fetch_head, state) do
-    state = fetch_and_process_head(state)
-    Process.send_after(self(), :fetch_head, @slot_time)
+    case fetch_head_slot(state.endpoint) do
+      {:ok, head_slot} ->
+        state = %{state | head_slot: head_slot}
+
+        if state.last_slot == 0 do
+          # First run: start syncing from a recent slot (head - 100)
+          start = max(head_slot - 100, 1)
+          Logger.info("BeaconFetcher: head at slot #{head_slot}, starting sync from #{start}")
+          state = %{state | last_slot: start - 1, syncing: true}
+          send(self(), :sync_batch)
+          {:noreply, state}
+        else
+          # Already syncing, just update head
+          state = fetch_and_process_head(state)
+          Process.send_after(self(), :fetch_head, @slot_time)
+          {:noreply, state}
+        end
+
+      {:error, reason} ->
+        Logger.warning("BeaconFetcher: failed to get head slot: #{inspect(reason)}")
+        Process.send_after(self(), :fetch_head, @slot_time)
+        {:noreply, %{state | errors: state.errors + 1}}
+    end
+  end
+
+  def handle_info(:sync_batch, state) do
+    state = sync_batch(state)
+
+    if state.last_slot < state.head_slot do
+      Process.send_after(self(), :sync_batch, @batch_delay)
+    else
+      Logger.info("BeaconFetcher: caught up to head slot #{state.head_slot}")
+      state = %{state | syncing: false}
+      Process.send_after(self(), :fetch_head, @slot_time)
+    end
+
     {:noreply, state}
   end
 
@@ -88,7 +127,10 @@ defmodule EthChain.BeaconFetcher do
   def handle_call(:status, _from, state) do
     reply = %{
       last_slot: state.last_slot,
+      head_slot: state.head_slot,
       last_block_number: state.last_block_number,
+      blocks_stored: state.blocks_stored,
+      syncing: state.syncing,
       endpoint: state.endpoint,
       network: state.network,
       errors: state.errors,
@@ -100,6 +142,68 @@ defmodule EthChain.BeaconFetcher do
 
   # --- Fetch logic ---
 
+  defp fetch_head_slot(endpoint) do
+    url = "#{endpoint}/eth/v1/beacon/headers/head"
+    headers = [{~c"Accept", ~c"application/json"}]
+    http_opts = [{:timeout, @http_timeout}, {:connect_timeout, @connect_timeout}, {:ssl, ssl_opts()}]
+
+    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [{:body_format, :binary}]) do
+      {:ok, {{_, 200, _}, _, body}} ->
+        case Jason.decode(body) do
+          {:ok, %{"data" => %{"header" => %{"message" => %{"slot" => slot_str}}}}} ->
+            {:ok, parse_slot(slot_str)}
+          _ -> {:error, :unexpected_format}
+        end
+      {:ok, {{_, code, _}, _, _}} -> {:error, {:http_status, code}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp sync_batch(state) do
+    start_slot = state.last_slot + 1
+    end_slot = min(start_slot + @batch_size - 1, state.head_slot)
+
+    Logger.info("BeaconFetcher: syncing slots #{start_slot}..#{end_slot} (head: #{state.head_slot})")
+
+    state =
+      Enum.reduce(start_slot..end_slot, state, fn slot, acc ->
+        case fetch_block_by_slot(acc.endpoint, slot) do
+          {:ok, _slot, exec_payload} ->
+            acc = process_execution_payload(exec_payload, acc)
+            %{acc | last_slot: slot, blocks_stored: acc.blocks_stored + 1}
+
+          {:error, :no_execution_payload} ->
+            # Slot without execution payload (missed slot), skip
+            %{acc | last_slot: slot}
+
+          {:error, {:http_status, 404}} ->
+            # Empty slot
+            %{acc | last_slot: slot}
+
+          {:error, reason} ->
+            Logger.debug("BeaconFetcher: slot #{slot} fetch failed: #{inspect(reason)}")
+            %{acc | last_slot: slot}
+        end
+      end)
+
+    pct = if state.head_slot > 0, do: Float.round(state.last_slot / state.head_slot * 100, 2), else: 0.0
+    Logger.info("BeaconFetcher: progress #{pct}% (slot #{state.last_slot}/#{state.head_slot}, #{state.blocks_stored} blocks)")
+    state
+  end
+
+  defp fetch_block_by_slot(endpoint, slot) do
+    url = "#{endpoint}/eth/v2/beacon/blocks/#{slot}"
+    headers = [{~c"Accept", ~c"application/json"}]
+    http_opts = [{:timeout, @http_timeout}, {:connect_timeout, @connect_timeout}, {:ssl, ssl_opts()}]
+
+    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [{:body_format, :binary}]) do
+      {:ok, {{_, 200, _}, _, body}} -> parse_beacon_block(body)
+      {:ok, {{_, 404, _}, _, _}} -> {:error, {:http_status, 404}}
+      {:ok, {{_, code, _}, _, _}} -> {:error, {:http_status, code}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @spec fetch_and_process_head(%__MODULE__{}) :: %__MODULE__{}
   defp fetch_and_process_head(state) do
     case fetch_head_block(state.endpoint) do
@@ -107,7 +211,7 @@ defmodule EthChain.BeaconFetcher do
         if slot > state.last_slot do
           Logger.info("BeaconFetcher: new block at slot #{slot}")
           state = process_execution_payload(exec_payload, state)
-          %{state | last_slot: slot, errors: 0}
+          %{state | last_slot: slot, blocks_stored: state.blocks_stored + 1, errors: 0}
         else
           state
         end

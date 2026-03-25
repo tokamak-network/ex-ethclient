@@ -173,8 +173,17 @@ defmodule EthDashboard.Collector do
 
   @spec collect_sync() :: {String.t(), non_neg_integer(), non_neg_integer()}
   defp collect_sync do
-    s = EthNet.Sync.Manager.status()
-    {to_string(s[:status] || "idle"), s[:current_block] || 0, s[:target_block] || 0}
+    # Prefer BeaconFetcher data if available
+    beacon = collect_beacon_fetcher()
+
+    if beacon && beacon[:syncing] do
+      {"syncing", beacon[:last_slot] || 0, beacon[:head_slot] || 0}
+    else if beacon && (beacon[:blocks_stored] || 0) > 0 do
+      {"synced", beacon[:last_slot] || 0, beacon[:head_slot] || 0}
+    else
+      s = EthNet.Sync.Manager.status()
+      {to_string(s[:status] || "idle"), s[:current_block] || 0, s[:target_block] || 0}
+    end end
   catch
     _, _ -> {"idle", 0, 0}
   end

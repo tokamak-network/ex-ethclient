@@ -285,9 +285,12 @@ defmodule EthChain.BeaconFetcher do
 
   @spec process_execution_payload(map(), %__MODULE__{}) :: %__MODULE__{}
   defp process_execution_payload(payload, state) do
-    block_number = parse_hex_or_int(payload["block_number"])
-    block_hash = payload["block_hash"]
-    parent_hash = payload["parent_hash"]
+    # Convert Beacon API snake_case keys to Engine API camelCase
+    payload = to_camel_case(payload)
+
+    block_number = parse_hex_or_int(payload["blockNumber"] || payload["block_number"])
+    block_hash = payload["blockHash"] || payload["block_hash"]
+    parent_hash = payload["parentHash"] || payload["parent_hash"]
 
     Logger.info(
       "BeaconFetcher: processing block ##{block_number} " <>
@@ -333,6 +336,21 @@ defmodule EthChain.BeaconFetcher do
 
   @spec update_fork_choice(String.t() | nil) :: :ok
   defp update_fork_choice(nil), do: :ok
+
+  # Beacon API returns snake_case keys, Engine API expects camelCase
+  defp to_camel_case(map) when is_map(map) do
+    Map.new(map, fn {k, v} ->
+      {snake_to_camel(k), v}
+    end)
+  end
+
+  defp snake_to_camel(key) when is_binary(key) do
+    case String.split(key, "_") do
+      [first | rest] ->
+        first <> Enum.map_join(rest, "", &String.capitalize/1)
+      _ -> key
+    end
+  end
 
   defp update_fork_choice(block_hash) do
     zero_hash = "0x" <> String.duplicate("0", 64)

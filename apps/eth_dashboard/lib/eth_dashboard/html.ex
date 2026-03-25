@@ -278,15 +278,7 @@ defmodule EthDashboard.Html do
           <div class="progress-label" id="sync-pct">0.00%</div>
         </div>
 
-        <!-- Peers -->
-        <div class="card">
-          <h2>Peers <span class="stat-value" style="font-size:16px;margin-left:8px" id="peer-count">0</span></h2>
-          <div class="peer-list" id="peer-list">
-            <div class="empty-state">No peers connected</div>
-          </div>
-        </div>
-
-        <!-- Engine API -->
+        <!-- Engine API + System side by side -->
         <div class="card">
           <h2>Engine API</h2>
           <div class="engine-list" id="engine-list">
@@ -294,15 +286,6 @@ defmodule EthDashboard.Html do
           </div>
         </div>
 
-        <!-- Recent Blocks -->
-        <div class="card">
-          <h2>Recent Blocks</h2>
-          <div class="block-list" id="block-list">
-            <div class="empty-state">No blocks yet</div>
-          </div>
-        </div>
-
-        <!-- System -->
         <div class="card">
           <h2>System</h2>
           <div class="stat-row">
@@ -324,6 +307,14 @@ defmodule EthDashboard.Html do
               <div class="stat-value" id="msg-recv" style="font-size:18px;color:#3fb950">0</div>
               <div class="stat-label">Messages Received</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Recent Blocks - full width -->
+        <div class="card full-width">
+          <h2>Recent Blocks</h2>
+          <div class="block-list" id="block-list" style="max-height:400px">
+            <div class="empty-state">No blocks yet</div>
           </div>
         </div>
       </div>
@@ -389,22 +380,6 @@ defmodule EthDashboard.Html do
             Math.min(pct, 100).toFixed(2) + '%';
           document.getElementById('sync-pct').textContent =
             pct.toFixed(2) + '%';
-
-          // Peers
-          document.getElementById('peer-count').textContent = d.peers.count;
-          const peerList = document.getElementById('peer-list');
-          if (d.peers.list.length === 0) {
-            peerList.innerHTML = '<div class="empty-state">No peers connected</div>';
-          } else {
-            peerList.innerHTML = d.peers.list.map(function(p) {
-              return '<div class="peer-row">' +
-                '<span><span class="dot dot-green"></span>' +
-                escapeHtml(p.ip) + ':' + (p.port || '') + '</span>' +
-                '<span style="color:#8b949e;font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-                escapeHtml((p.client || '').substring(0, 30)) + '</span>' +
-                '</div>';
-            }).join('');
-          }
 
           // Engine API
           const engineList = document.getElementById('engine-list');

@@ -188,15 +188,20 @@ defmodule EthDashboard.Html do
           border-radius: 3px;
         }
 
-        .peer-row, .block-row, .engine-row {
+        .block-row, .engine-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 6px 0;
+          padding: 8px 4px;
           border-bottom: 1px solid #21262d;
+          gap: 16px;
         }
-        .peer-row:last-child, .block-row:last-child, .engine-row:last-child {
+        .block-row:last-child, .engine-row:last-child {
           border-bottom: none;
+        }
+        .block-row:hover {
+          background: #1c2128;
+          border-radius: 4px;
         }
 
         .engine-status-VALID { color: #3fb950; font-weight: bold; }
@@ -402,10 +407,10 @@ defmodule EthDashboard.Html do
           } else {
             blockList.innerHTML = d.blocks.map(function(b) {
               return '<div class="block-row">' +
-                '<span style="color:#58a6ff;min-width:80px">#' + b.number.toLocaleString() + '</span>' +
-                '<span style="color:#484f58;font-size:11px;flex:1">0x' + escapeHtml(b.hash) + '...</span>' +
-                '<span style="min-width:50px;text-align:right">' + b.tx_count + ' tx</span>' +
-                '<span style="color:#8b949e;min-width:70px;text-align:right">' + formatGas(b.gas_used) + '</span>' +
+                '<span style="color:#58a6ff;min-width:120px;font-weight:bold">#' + b.number.toLocaleString() + '</span>' +
+                '<span style="color:#484f58;font-size:12px;min-width:160px;font-family:monospace">0x' + escapeHtml(b.hash || '').substring(0, 16) + '…</span>' +
+                '<span style="color:#c9d1d9;min-width:70px;text-align:right">' + (b.tx_count || 0) + ' txs</span>' +
+                '<span style="color:#8b949e;min-width:90px;text-align:right">' + formatGas(b.gas_used || 0) + ' gas</span>' +
                 '</div>';
             }).join('');
           }

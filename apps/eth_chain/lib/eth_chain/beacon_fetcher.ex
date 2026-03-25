@@ -310,15 +310,11 @@ defmodule EthChain.BeaconFetcher do
 
       if status == "VALID" do
         update_fork_choice(block_hash)
+        # Report block to dashboard
+        report_block(block_number, block_hash, payload)
       end
 
-      case status do
-        s when s in ["VALID", "SYNCING"] ->
-          %{state | last_block_number: block_number}
-
-        _ ->
-          %{state | last_block_number: block_number}
-      end
+      %{state | last_block_number: block_number}
     rescue
       e ->
         Logger.error("BeaconFetcher: Engine call failed: #{Exception.message(e)}")
@@ -400,6 +396,21 @@ defmodule EthChain.BeaconFetcher do
   defp truncate_hash(nil), do: "nil"
   defp truncate_hash(hash) when is_binary(hash), do: String.slice(hash, 0, 18) <> "..."
   defp truncate_hash(_), do: "?"
+
+  defp report_block(block_number, block_hash, payload) do
+    tx_count = length(payload["transactions"] || [])
+    gas_used = parse_hex_or_int(payload["gasUsed"] || "0")
+    hash_bin = case block_hash do
+      "0x" <> hex -> Base.decode16!(hex, case: :mixed)
+      _ -> <<0::256>>
+    end
+
+    try do
+      EthDashboard.Collector.report_block(block_number, hash_bin, tx_count, gas_used)
+    catch
+      _, _ -> :ok
+    end
+  end
 
   @spec report_engine(String.t(), String.t()) :: :ok
   defp report_engine(method, status) do

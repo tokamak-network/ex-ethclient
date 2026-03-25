@@ -173,19 +173,36 @@ defmodule EthDashboard.Collector do
 
   @spec collect_sync() :: {String.t(), non_neg_integer(), non_neg_integer()}
   defp collect_sync do
-    # Prefer BeaconFetcher data if available
+    # Get actual stored block number from storage
+    stored_block = get_stored_block_number()
     beacon = collect_beacon_fetcher()
 
-    if beacon && beacon[:syncing] do
-      {"syncing", beacon[:last_slot] || 0, beacon[:head_slot] || 0}
-    else if beacon && (beacon[:blocks_stored] || 0) > 0 do
-      {"synced", beacon[:last_slot] || 0, beacon[:head_slot] || 0}
-    else
-      s = EthNet.Sync.Manager.status()
-      {to_string(s[:status] || "idle"), s[:current_block] || 0, s[:target_block] || 0}
-    end end
+    cond do
+      beacon && beacon[:syncing] ->
+        target = beacon[:last_block_number] || 0
+        {"syncing", stored_block, target}
+
+      beacon && stored_block > 0 ->
+        target = beacon[:last_block_number] || stored_block
+        {"synced", stored_block, target}
+
+      true ->
+        s = EthNet.Sync.Manager.status()
+        {to_string(s[:status] || "idle"), stored_block, s[:target_block] || 0}
+    end
   catch
     _, _ -> {"idle", 0, 0}
+  end
+
+  defp get_stored_block_number do
+    EthStorage.Store.get_latest_block_number(EthStorage.Store)
+    |> case do
+      {:ok, nil} -> 0
+      {:ok, n} when is_integer(n) -> n
+      _ -> 0
+    end
+  catch
+    _, _ -> 0
   end
 
   @spec collect_beacon_fetcher() :: map() | nil

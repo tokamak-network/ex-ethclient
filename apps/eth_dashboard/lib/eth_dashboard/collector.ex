@@ -30,7 +30,8 @@ defmodule EthDashboard.Collector do
             memory_mb: 0.0,
             process_count: 0,
             uptime_seconds: 0,
-            started_at: nil
+            started_at: nil,
+            beacon_fetcher: nil
 
   # --- Public API ---
 
@@ -124,6 +125,8 @@ defmodule EthDashboard.Collector do
         do: Float.round((current - state.prev_block) / elapsed, 1),
         else: 0.0
 
+    beacon_status = collect_beacon_fetcher()
+
     state = %{
       state
       | peer_count: peer_count,
@@ -136,7 +139,8 @@ defmodule EthDashboard.Collector do
         prev_tick: now,
         memory_mb: Float.round(:erlang.memory(:total) / 1_048_576, 1),
         process_count: :erlang.system_info(:process_count),
-        uptime_seconds: now - (state.started_at || now)
+        uptime_seconds: now - (state.started_at || now),
+        beacon_fetcher: beacon_status
     }
 
     Process.send_after(self(), :tick, @tick)
@@ -173,6 +177,17 @@ defmodule EthDashboard.Collector do
     {to_string(s[:status] || "idle"), s[:current_block] || 0, s[:target_block] || 0}
   catch
     _, _ -> {"idle", 0, 0}
+  end
+
+  @spec collect_beacon_fetcher() :: map() | nil
+  defp collect_beacon_fetcher do
+    if Process.whereis(EthChain.BeaconFetcher) do
+      EthChain.BeaconFetcher.status()
+    else
+      nil
+    end
+  catch
+    _, _ -> nil
   end
 
   @spec format_ip(term()) :: String.t()

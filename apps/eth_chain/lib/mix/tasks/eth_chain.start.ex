@@ -7,6 +7,7 @@ defmodule Mix.Tasks.EthChain.Start do
       mix eth_chain.start [--network NETWORK] [--port PORT] [--rpc-port RPC_PORT]
                           [--datadir DIR] [--rpc BOOL] [--bootnodes ENODES]
                           [--dashboard] [--dashboard-port PORT]
+                          [--beacon-api URL]
 
   ## Options
 
@@ -18,6 +19,7 @@ defmodule Mix.Tasks.EthChain.Start do
   - `--bootnodes` - Comma-separated enode URLs
   - `--dashboard` - Enable web dashboard (default: false)
   - `--dashboard-port` - Dashboard HTTP port (default: 4000)
+  - `--beacon-api` - Public Beacon API endpoint URL (enables BeaconFetcher)
   """
 
   use Mix.Task
@@ -37,7 +39,8 @@ defmodule Mix.Tasks.EthChain.Start do
           rpc: :boolean,
           bootnodes: :string,
           dashboard: :boolean,
-          dashboard_port: :integer
+          dashboard_port: :integer,
+          beacon_api: :string
         ],
         aliases: [p: :port, r: :rpc_port, d: :datadir, n: :network]
       )
@@ -79,6 +82,12 @@ defmodule Mix.Tasks.EthChain.Start do
       Application.put_env(:eth_dashboard, :port, dashboard_port)
     end
 
+    # Enable BeaconFetcher if --beacon-api flag is passed
+    if beacon_url = Keyword.get(opts, :beacon_api) do
+      Application.put_env(:eth_chain, :beacon_api_endpoint, beacon_url)
+      Application.put_env(:eth_chain, :network, network)
+    end
+
     Mix.Task.run("app.start")
 
     {:ok, _pid} = EthChain.NodeSupervisor.start_link(config)
@@ -88,6 +97,13 @@ defmodule Mix.Tasks.EthChain.Start do
     dashboard_info =
       if Keyword.get(opts, :dashboard, false) do
         " Dashboard: http://localhost:#{Application.get_env(:eth_dashboard, :port, 4000)}\n"
+      else
+        ""
+      end
+
+    beacon_info =
+      if beacon_url = Keyword.get(opts, :beacon_api) do
+        " Beacon:    #{beacon_url}\n"
       else
         ""
       end
@@ -105,7 +121,7 @@ defmodule Mix.Tasks.EthChain.Start do
      Engine:    #{config.engine_port}
      JWT:       #{jwt_path}
      Head:      ##{inspect(head)}
-    #{dashboard_info}====================================
+    #{dashboard_info}#{beacon_info}====================================
     """)
 
     unless iex_running?() do

@@ -28,7 +28,8 @@ defmodule EthChain.NodeSupervisor do
         maybe_start_store(config),
         maybe_start_mempool(),
         genesis_task(),
-        maybe_start_sync_manager()
+        maybe_start_sync_manager(),
+        maybe_start_beacon_fetcher()
       ]
       |> List.flatten()
 
@@ -56,6 +57,22 @@ defmodule EthChain.NodeSupervisor do
       []
     else
       [{EthNet.Sync.Manager, []}]
+    end
+  end
+
+  defp maybe_start_beacon_fetcher do
+    case Application.get_env(:eth_chain, :beacon_api_endpoint) do
+      nil ->
+        []
+
+      endpoint when is_binary(endpoint) ->
+        network = Application.get_env(:eth_chain, :network, :mainnet)
+
+        if Process.whereis(EthChain.BeaconFetcher) do
+          []
+        else
+          [{EthChain.BeaconFetcher, [endpoint: endpoint, network: network]}]
+        end
     end
   end
 

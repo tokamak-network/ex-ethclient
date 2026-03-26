@@ -687,8 +687,43 @@ defmodule EthRpc.Eth do
     end
   end
 
-  @doc false
-  @spec eth_create_access_list(list()) :: {:ok, map()}
+  @doc """
+  Creates an EIP-2930 access list for the given transaction.
+
+  Executes the transaction via the gas estimator to determine gas usage.
+  Returns an empty access list with the estimated gas. Once the revm NIF
+  supports access-list tracing, this will return the actual storage slots
+  touched during execution.
+
+  ## Parameters
+
+    - `params` - A list where the first element is a call object map with
+      keys `"from"`, `"to"`, `"data"`, `"value"`, `"gasPrice"`, etc.
+
+  ## Returns
+
+    - `{:ok, %{"accessList" => [...], "gasUsed" => "0x..."}}` on success.
+    - `{:error, code, message}` on execution failure.
+  """
+  @spec eth_create_access_list(list()) ::
+          {:ok, map()} | {:error, integer(), String.t()}
+  def eth_create_access_list([call_obj | _rest]) when is_map(call_obj) do
+    call_params = parse_call_params(call_obj)
+    {_mod, store_name} = store()
+
+    case EthVm.GasEstimator.estimate_gas(call_params, store_name) do
+      {:ok, gas} ->
+        # TODO: populate access list from revm execution trace once NIF supports it
+        {:ok, %{"accessList" => [], "gasUsed" => Hex.encode_quantity(gas)}}
+
+      {:error, :execution_reverted} ->
+        {:error, 3, "execution reverted"}
+
+      {:error, reason} ->
+        {:error, -32603, "Internal error: #{inspect(reason)}"}
+    end
+  end
+
   def eth_create_access_list(_params) do
     {:ok, %{"accessList" => [], "gasUsed" => "0x5208"}}
   end

@@ -293,7 +293,7 @@ defmodule EthNet.Peer.ConnectionStatusTest do
   end
 
   describe "P2P Hello capabilities" do
-    test "encode_hello advertises eth/66, eth/67, and eth/68" do
+    test "encode_hello advertises eth/68, eth/69, eth/70 and snap/1" do
       node_id = :crypto.strong_rand_bytes(64)
       {code, payload} = P2P.encode_hello(node_id)
 
@@ -301,10 +301,14 @@ defmodule EthNet.Peer.ConnectionStatusTest do
 
       {:hello, hello} = P2P.decode(code, payload)
       eth_caps = Enum.filter(hello.capabilities, fn {name, _} -> name == "eth" end)
+      snap_caps = Enum.filter(hello.capabilities, fn {name, _} -> name == "snap" end)
 
       assert length(eth_caps) == 3
       versions = Enum.map(eth_caps, fn {_, v} -> v end) |> Enum.sort()
-      assert versions == [66, 67, 68]
+      assert versions == [68, 69, 70]
+
+      assert length(snap_caps) == 1
+      assert snap_caps == [{"snap", 1}]
     end
   end
 

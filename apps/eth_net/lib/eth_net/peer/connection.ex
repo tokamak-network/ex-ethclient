@@ -14,7 +14,7 @@ defmodule EthNet.Peer.Connection do
   require Logger
 
   alias EthNet.RLPx.{Handshake, FrameCodec}
-  alias EthNet.Protocol.{P2P, Eth68}
+  alias EthNet.Protocol.{P2P, Eth68, Eth69, Eth70, Snap1}
 
   @connect_timeout 5_000
   @handshake_timeout 10_000
@@ -36,6 +36,8 @@ defmodule EthNet.Peer.Connection do
     :remote_hello,
     :remote_status,
     :eth_version,
+    :snap_version,
+    :snap_offset,
     state: :connecting,
     buffer: <<>>
   ]

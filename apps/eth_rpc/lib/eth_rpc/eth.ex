@@ -108,7 +108,10 @@ defmodule EthRpc.Eth do
 
   @doc false
   @spec eth_chain_id(list()) :: {:ok, String.t()}
-  def eth_chain_id(_params), do: {:ok, "0x1"}
+  def eth_chain_id(_params) do
+    chain_id = Application.get_env(:eth_chain, :chain_id, 1)
+    {:ok, Hex.encode_quantity(chain_id)}
+  end
 
   @doc false
   @spec eth_block_number(list()) :: {:ok, String.t()}
@@ -738,7 +741,10 @@ defmodule EthRpc.Eth do
 
   @doc false
   @spec net_version(list()) :: {:ok, String.t()}
-  def net_version(_params), do: {:ok, "1"}
+  def net_version(_params) do
+    network_id = Application.get_env(:eth_chain, :network_id, 1)
+    {:ok, Integer.to_string(network_id)}
+  end
 
   @doc false
   @spec net_listening(list()) :: {:ok, true}
@@ -746,7 +752,16 @@ defmodule EthRpc.Eth do
 
   @doc false
   @spec net_peer_count(list()) :: {:ok, String.t()}
-  def net_peer_count(_params), do: {:ok, "0x0"}
+  def net_peer_count(_params) do
+    count =
+      try do
+        EthNet.Peer.Manager.connected_count()
+      catch
+        :exit, _ -> 0
+      end
+
+    {:ok, Hex.encode_quantity(count)}
+  end
 
   # -- web3_ namespace -------------------------------------------------------
 

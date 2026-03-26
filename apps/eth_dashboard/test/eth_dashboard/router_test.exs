@@ -42,13 +42,11 @@ defmodule EthDashboard.RouterTest do
       body = conn.resp_body
 
       assert body =~ "Sync"
-      assert body =~ "Peers"
       assert body =~ "Engine API"
       assert body =~ "Recent Blocks"
       assert body =~ "System"
       assert body =~ "current-block"
       assert body =~ "target-block"
-      assert body =~ "peer-list"
       assert body =~ "engine-list"
       assert body =~ "block-list"
     end

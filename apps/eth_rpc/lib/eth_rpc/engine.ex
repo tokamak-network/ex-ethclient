@@ -143,12 +143,31 @@ defmodule EthRpc.Engine do
   @doc """
   engine_getBlobsV1
 
-  Takes a list of versioned hashes. Returns list of BlobAndProof or null.
-  Currently a stub that returns null for all hashes.
+  Takes a list of versioned hashes (32 bytes each, hex-encoded).
+  Returns a list of BlobAndProofV1 objects for known hashes, or null
+  for unknown ones.
+
+  BlobAndProofV1: `%{"blob" => DATA (131072 bytes), "proof" => DATA (48 bytes)}`
   """
   @spec get_blobs_v1(list()) :: {:ok, list()}
   def get_blobs_v1([hashes | _]) when is_list(hashes) do
-    {:ok, Enum.map(hashes, fn _hash -> nil end)}
+    store = store_server()
+
+    results =
+      Enum.map(hashes, fn hash_hex ->
+        with {:ok, hash_bin} <- Hex.decode_data(hash_hex),
+             {:ok, {blob_data, kzg_proof}} when not is_nil(blob_data) <-
+               fetch_blob_from_store(hash_bin, store) do
+          %{
+            "blob" => Hex.encode_data(blob_data),
+            "proof" => Hex.encode_data(kzg_proof)
+          }
+        else
+          _ -> nil
+        end
+      end)
+
+    {:ok, results}
   end
 
   def get_blobs_v1(_), do: {:ok, []}
@@ -184,12 +203,9 @@ defmodule EthRpc.Engine do
   def exchange_transition_config_v1([config | _]) when is_map(config) do
     {:ok,
      %{
-       "terminalTotalDifficulty" =>
-         Map.get(config, "terminalTotalDifficulty", "0x0"),
-       "terminalBlockHash" =>
-         Map.get(config, "terminalBlockHash", Hex.encode_data(<<0::256>>)),
-       "terminalBlockNumber" =>
-         Map.get(config, "terminalBlockNumber", "0x0")
+       "terminalTotalDifficulty" => Map.get(config, "terminalTotalDifficulty", "0x0"),
+       "terminalBlockHash" => Map.get(config, "terminalBlockHash", Hex.encode_data(<<0::256>>)),
+       "terminalBlockNumber" => Map.get(config, "terminalBlockNumber", "0x0")
      }}
   end
 
@@ -242,10 +258,10 @@ defmodule EthRpc.Engine do
         {:error, _} ->
           # CL says this block is finalized but we don't have it - INVALID
           Logger.warning("FCU: finalized block not found in store")
+
           {:ok,
            %{
-             "payloadStatus" =>
-               payload_status("INVALID", nil, "Finalized block not found"),
+             "payloadStatus" => payload_status("INVALID", nil, "Finalized block not found"),
              "payloadId" => nil
            }}
       end
@@ -290,6 +306,9 @@ defmodule EthRpc.Engine do
             "parent=#{Base.encode16(block.header.parent_hash, case: :lower)}"
         )
 
+        # Store blobs from the execution payload if present (V3/V4)
+        maybe_store_blobs_from_payload(payload_map, version)
+
         case lookup_parent(block) do
           {:ok, parent} ->
             execute_and_store(block, parent)
@@ -320,6 +339,27 @@ defmodule EthRpc.Engine do
         {:ok, payload_status("SYNCING", nil, nil)}
     end
   end
+
+  @spec maybe_store_blobs_from_payload(map(), atom()) :: :ok
+  defp maybe_store_blobs_from_payload(payload_map, version)
+       when version in [:v3, :v4] do
+    blobs_bundle = Map.get(payload_map, "blobsBundle", %{})
+    versioned_hashes = Map.get(payload_map, "blobVersionedHashes", [])
+    blobs = Map.get(blobs_bundle, "blobs", [])
+    proofs = Map.get(blobs_bundle, "proofs", [])
+
+    if versioned_hashes != [] and blobs != [] and proofs != [] and
+         length(versioned_hashes) == length(blobs) and
+         length(versioned_hashes) == length(proofs) do
+      store = store_server()
+      store_blobs(versioned_hashes, blobs, proofs, store)
+      Logger.info("newPayload#{version}: stored #{length(blobs)} blobs")
+    end
+
+    :ok
+  end
+
+  defp maybe_store_blobs_from_payload(_payload_map, _version), do: :ok
 
   @spec parse_payload(map()) :: {:ok, EthCore.Types.Block.t()} | {:error, term()}
   defp parse_payload(payload_map) do
@@ -479,6 +519,30 @@ defmodule EthRpc.Engine do
     :exit, _ -> {:error, :store_unavailable}
   end
 
+  @spec fetch_blob_from_store(binary(), GenServer.server()) ::
+          {:ok, {binary(), binary()} | nil} | {:error, term()}
+  defp fetch_blob_from_store(hash_bin, store) do
+    EthStorage.Store.get_blob(store, hash_bin)
+  catch
+    :exit, _ -> {:error, :store_unavailable}
+  end
+
+  @spec store_blobs(list(), list(), list(), GenServer.server()) :: :ok
+  defp store_blobs(versioned_hashes, blobs, proofs, store) do
+    [versioned_hashes, blobs, proofs]
+    |> Enum.zip()
+    |> Enum.each(fn {hash_hex, blob_hex, proof_hex} ->
+      with {:ok, hash_bin} <- Hex.decode_data(hash_hex),
+           {:ok, blob_bin} <- Hex.decode_data(blob_hex),
+           {:ok, proof_bin} <- Hex.decode_data(proof_hex) do
+        EthStorage.Store.put_blob(store, hash_bin, {blob_bin, proof_bin})
+      else
+        _ ->
+          Logger.warning("Failed to decode blob data for storage")
+      end
+    end)
+  end
+
   # --- Private helpers (shared) ---
 
   @spec parse_fcu_params(list()) :: {map(), map() | nil}
@@ -625,6 +689,7 @@ defmodule EthRpc.Engine do
             "Block execution raised: #{inspect(e)}, " <>
               "falling back to store-only"
           )
+
           :skip_execution
       catch
         :exit, reason ->
@@ -632,6 +697,7 @@ defmodule EthRpc.Engine do
             "Block execution exited: #{inspect(reason)}, " <>
               "falling back to store-only"
           )
+
           :skip_execution
       end
 

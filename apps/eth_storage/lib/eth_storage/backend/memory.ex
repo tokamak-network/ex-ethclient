@@ -18,7 +18,8 @@ defmodule EthStorage.Backend.Memory do
     :account_trie_nodes,
     :storage_trie_nodes,
     :account_codes,
-    :chain_config
+    :chain_config,
+    :blobs
   ]
 
   @doc "Returns the list of logical table names."

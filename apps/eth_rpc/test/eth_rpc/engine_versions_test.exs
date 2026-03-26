@@ -176,7 +176,7 @@ defmodule EthRpc.EngineVersionsTest do
   end
 
   describe "getBlobsV1" do
-    test "returns null for all versioned hashes (stub)" do
+    test "returns null for unknown versioned hashes" do
       hashes = [Hex.encode_data(<<1::256>>), Hex.encode_data(<<2::256>>)]
 
       assert {:ok, results} = Engine.get_blobs_v1([hashes])
@@ -186,6 +186,78 @@ defmodule EthRpc.EngineVersionsTest do
 
     test "returns empty list for no hashes" do
       assert {:ok, []} = Engine.get_blobs_v1([])
+    end
+
+    test "returns stored blob data and proof" do
+      versioned_hash = <<1::256>>
+      blob_data = :crypto.strong_rand_bytes(131_072)
+      kzg_proof = :crypto.strong_rand_bytes(48)
+
+      :ok =
+        Store.put_blob(
+          @test_store,
+          versioned_hash,
+          {blob_data, kzg_proof}
+        )
+
+      hashes = [Hex.encode_data(versioned_hash)]
+
+      assert {:ok, [result]} = Engine.get_blobs_v1([hashes])
+      assert result != nil
+      assert result["blob"] == Hex.encode_data(blob_data)
+      assert result["proof"] == Hex.encode_data(kzg_proof)
+    end
+
+    test "returns mixed results for known and unknown hashes" do
+      known_hash = <<10::256>>
+      unknown_hash = <<11::256>>
+      blob_data = :crypto.strong_rand_bytes(131_072)
+      kzg_proof = :crypto.strong_rand_bytes(48)
+
+      :ok =
+        Store.put_blob(
+          @test_store,
+          known_hash,
+          {blob_data, kzg_proof}
+        )
+
+      hashes = [
+        Hex.encode_data(known_hash),
+        Hex.encode_data(unknown_hash)
+      ]
+
+      assert {:ok, [found, not_found]} = Engine.get_blobs_v1([hashes])
+
+      assert found != nil
+      assert found["blob"] == Hex.encode_data(blob_data)
+      assert found["proof"] == Hex.encode_data(kzg_proof)
+      assert not_found == nil
+    end
+
+    test "stores blobs via newPayloadV3 with blobsBundle" do
+      versioned_hash = <<42::256>>
+      blob_data = :crypto.strong_rand_bytes(131_072)
+      kzg_proof = :crypto.strong_rand_bytes(48)
+
+      payload =
+        build_execution_payload(100, <<99::256>>)
+        |> Map.put("blobVersionedHashes", [
+          Hex.encode_data(versioned_hash)
+        ])
+        |> Map.put("blobsBundle", %{
+          "blobs" => [Hex.encode_data(blob_data)],
+          "proofs" => [Hex.encode_data(kzg_proof)],
+          "commitments" => [Hex.encode_data(:crypto.strong_rand_bytes(48))]
+        })
+
+      assert {:ok, _result} = Engine.new_payload_v3([payload])
+
+      # Verify blobs are now retrievable via getBlobsV1
+      hashes = [Hex.encode_data(versioned_hash)]
+      assert {:ok, [blob_result]} = Engine.get_blobs_v1([hashes])
+      assert blob_result != nil
+      assert blob_result["blob"] == Hex.encode_data(blob_data)
+      assert blob_result["proof"] == Hex.encode_data(kzg_proof)
     end
   end
 

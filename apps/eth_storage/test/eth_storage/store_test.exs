@@ -125,4 +125,37 @@ defmodule EthStorage.StoreTest do
       assert {:ok, ^data} = Store.get_storage_trie_node(store, hash)
     end
   end
+
+  describe "blobs" do
+    test "put and get blob with KZG proof", %{store: store} do
+      versioned_hash = :crypto.strong_rand_bytes(32)
+      blob_data = :crypto.strong_rand_bytes(131_072)
+      kzg_proof = :crypto.strong_rand_bytes(48)
+
+      assert :ok =
+               Store.put_blob(store, versioned_hash, {blob_data, kzg_proof})
+
+      assert {:ok, {^blob_data, ^kzg_proof}} =
+               Store.get_blob(store, versioned_hash)
+    end
+
+    test "returns nil for missing blob", %{store: store} do
+      hash = :crypto.strong_rand_bytes(32)
+      assert {:ok, nil} = Store.get_blob(store, hash)
+    end
+
+    test "overwrites existing blob", %{store: store} do
+      versioned_hash = :crypto.strong_rand_bytes(32)
+      blob1 = :crypto.strong_rand_bytes(131_072)
+      proof1 = :crypto.strong_rand_bytes(48)
+      blob2 = :crypto.strong_rand_bytes(131_072)
+      proof2 = :crypto.strong_rand_bytes(48)
+
+      :ok = Store.put_blob(store, versioned_hash, {blob1, proof1})
+      :ok = Store.put_blob(store, versioned_hash, {blob2, proof2})
+
+      assert {:ok, {^blob2, ^proof2}} =
+               Store.get_blob(store, versioned_hash)
+    end
+  end
 end

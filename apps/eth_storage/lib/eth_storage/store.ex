@@ -160,6 +160,25 @@ defmodule EthStorage.Store do
     GenServer.call(server, {:put, :receipts, key, encoded_receipt})
   end
 
+  @doc "Stores a blob and its KZG proof keyed by versioned hash."
+  @spec put_blob(GenServer.server(), <<_::256>>, {binary(), binary()}) ::
+          :ok | {:error, term()}
+  def put_blob(server \\ __MODULE__, versioned_hash, {blob_data, kzg_proof}) do
+    value = :erlang.term_to_binary({blob_data, kzg_proof})
+    GenServer.call(server, {:put, :blobs, versioned_hash, value})
+  end
+
+  @doc "Gets a blob and its KZG proof by versioned hash. Returns `{blob_data, kzg_proof}` or nil."
+  @spec get_blob(GenServer.server(), <<_::256>>) ::
+          {:ok, {binary(), binary()} | nil} | {:error, term()}
+  def get_blob(server \\ __MODULE__, versioned_hash) do
+    case GenServer.call(server, {:get, :blobs, versioned_hash}) do
+      {:ok, nil} -> {:ok, nil}
+      {:ok, bin} -> {:ok, :erlang.binary_to_term(bin)}
+      {:error, _} = err -> err
+    end
+  end
+
   @doc "Gets an account trie node by hash."
   @spec get_trie_node(GenServer.server(), <<_::256>>) ::
           {:ok, binary() | nil} | {:error, term()}
@@ -206,7 +225,8 @@ defmodule EthStorage.Store do
     backend_opts = Keyword.get(opts, :backend_opts, default_backend_opts)
 
     # Merge top-level opts (e.g. :datadir) for backward compatibility
-    merged_opts = Keyword.merge(backend_opts, Keyword.drop(opts, [:name, :backend, :backend_opts]))
+    merged_opts =
+      Keyword.merge(backend_opts, Keyword.drop(opts, [:name, :backend, :backend_opts]))
 
     case backend.init(merged_opts) do
       {:ok, backend_state} ->

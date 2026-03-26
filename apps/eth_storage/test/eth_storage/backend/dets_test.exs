@@ -22,10 +22,10 @@ defmodule EthStorage.Backend.DETSTest do
       DETS.close(state)
     end
 
-    test "opens all 10 logical tables", %{datadir: dir} do
+    test "opens all 11 logical tables", %{datadir: dir} do
       {:ok, state} = DETS.init(datadir: dir)
 
-      assert map_size(state.tables) == 10
+      assert map_size(state.tables) == 11
       assert map_size(state.tables) == length(DETS.tables())
 
       for table <- DETS.tables() do

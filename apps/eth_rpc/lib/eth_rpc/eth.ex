@@ -466,7 +466,7 @@ defmodule EthRpc.Eth do
   @spec eth_syncing(list()) :: {:ok, false | map()}
   def eth_syncing(_params) do
     if sync_manager_available?() do
-      status = EthNet.Sync.Manager.status()
+      status = apply(EthNet.Sync.Manager, :status, [])
 
       if status.status == :syncing do
         {:ok,
@@ -755,7 +755,7 @@ defmodule EthRpc.Eth do
   def net_peer_count(_params) do
     count =
       try do
-        EthNet.Peer.Manager.connected_count()
+        apply(EthNet.Peer.Manager, :connected_count, [])
       catch
         :exit, _ -> 0
       end

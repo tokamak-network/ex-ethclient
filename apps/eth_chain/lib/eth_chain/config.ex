@@ -67,7 +67,7 @@ defmodule EthChain.Config do
       network: :sepolia,
       chain_id: 11_155_111,
       network_id: 11_155_111,
-      bootnodes: EthNet.Chain.bootnodes(:sepolia)
+      bootnodes: apply(EthNet.Chain, :bootnodes, [:sepolia])
     }
   end
 
@@ -82,7 +82,7 @@ defmodule EthChain.Config do
 
   @spec network_defaults(atom()) :: %{chain_id: non_neg_integer(), network_id: non_neg_integer(), bootnodes: [String.t()]}
   defp network_defaults(:sepolia) do
-    %{chain_id: 11_155_111, network_id: 11_155_111, bootnodes: EthNet.Chain.bootnodes(:sepolia)}
+    %{chain_id: 11_155_111, network_id: 11_155_111, bootnodes: apply(EthNet.Chain, :bootnodes, [:sepolia])}
   end
 
   defp network_defaults(_mainnet) do

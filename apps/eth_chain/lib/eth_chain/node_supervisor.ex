@@ -85,20 +85,21 @@ defmodule EthChain.NodeSupervisor do
     }
   end
 
-  @spec maybe_add_rpc([Supervisor.child_spec()], EthChain.Config.t()) ::
-          [Supervisor.child_spec()]
-  defp maybe_add_rpc(children, %EthChain.Config{rpc_enabled: false}), do: children
-
-  defp maybe_add_rpc(children, %EthChain.Config{rpc_enabled: true, rpc_port: port}) do
-    if Code.ensure_loaded?(Bandit) do
-      children ++ [rpc_child_spec(port)]
-    else
-      children
-    end
-  end
-
-  @spec rpc_child_spec(non_neg_integer()) :: Supervisor.child_spec()
-  defp rpc_child_spec(port) do
-    {Bandit, plug: EthRpc.Router, port: port}
-  end
+  # TODO: Wire up RPC child when NodeSupervisor manages the full stack
+  # @spec maybe_add_rpc([Supervisor.child_spec()], EthChain.Config.t()) ::
+  #         [Supervisor.child_spec()]
+  # defp maybe_add_rpc(children, %EthChain.Config{rpc_enabled: false}), do: children
+  #
+  # defp maybe_add_rpc(children, %EthChain.Config{rpc_enabled: true, rpc_port: port}) do
+  #   if Code.ensure_loaded?(Bandit) do
+  #     children ++ [rpc_child_spec(port)]
+  #   else
+  #     children
+  #   end
+  # end
+  #
+  # @spec rpc_child_spec(non_neg_integer()) :: Supervisor.child_spec()
+  # defp rpc_child_spec(port) do
+  #   {Bandit, plug: EthRpc.Router, port: port}
+  # end
 end

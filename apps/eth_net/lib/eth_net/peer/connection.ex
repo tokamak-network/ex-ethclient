@@ -14,7 +14,7 @@ defmodule EthNet.Peer.Connection do
   require Logger
 
   alias EthNet.RLPx.{Handshake, FrameCodec}
-  alias EthNet.Protocol.{P2P, Eth68, Eth69, Eth70, Snap1}
+  alias EthNet.Protocol.{P2P, Eth68}
 
   @connect_timeout 5_000
   @handshake_timeout 10_000
@@ -338,7 +338,7 @@ defmodule EthNet.Peer.Connection do
     case :gen_tcp.send(state.socket, frame) do
       :ok ->
         try do
-          EthDashboard.Collector.report_message(:sent)
+          apply(EthDashboard.Collector, :report_message, [:sent])
         catch
           _, _ -> :ok
         end
@@ -451,7 +451,7 @@ defmodule EthNet.Peer.Connection do
     case FrameCodec.decode(state.codec, state.buffer) do
       {:ok, msg_code, payload, remaining, codec} ->
         try do
-          EthDashboard.Collector.report_message(:received)
+          apply(EthDashboard.Collector, :report_message, [:received])
         catch
           _, _ -> :ok
         end
@@ -601,7 +601,7 @@ defmodule EthNet.Peer.Connection do
 
   defp get_local_head do
     try do
-      case EthStorage.BlockStore.latest_block_number(EthStorage.Store) do
+      case apply(EthStorage.BlockStore, :latest_block_number, [EthStorage.Store]) do
         {:ok, nil} -> 0
         {:ok, n} -> n
         _ -> 0

@@ -116,7 +116,7 @@ defmodule EthChain.BeaconFetcher do
       Process.send_after(self(), :sync_batch, @batch_delay)
     else
       Logger.info("BeaconFetcher: caught up to head slot #{state.head_slot}")
-      state = %{state | syncing: false}
+      _state = %{state | syncing: false}
       Process.send_after(self(), :fetch_head, @slot_time)
     end
 
@@ -300,7 +300,7 @@ defmodule EthChain.BeaconFetcher do
     params = [payload, [], nil, []]
 
     try do
-      result = EthRpc.Engine.new_payload_v4(params)
+      result = apply(EthRpc.Engine, :new_payload_v4, [params])
       Logger.info("BeaconFetcher: raw engine result: #{inspect(result)}")
 
       # Extract status from any response format
@@ -333,6 +333,26 @@ defmodule EthChain.BeaconFetcher do
   @spec update_fork_choice(String.t() | nil) :: :ok
   defp update_fork_choice(nil), do: :ok
 
+  defp update_fork_choice(block_hash) do
+    zero_hash = "0x" <> String.duplicate("0", 64)
+
+    fc_state = %{
+      "headBlockHash" => block_hash,
+      "safeBlockHash" => block_hash,
+      "finalizedBlockHash" => zero_hash
+    }
+
+    try do
+      apply(EthRpc.Engine, :forkchoice_updated_v3, [[fc_state, nil]])
+      report_engine("forkchoiceUpdated", "VALID")
+      :ok
+    rescue
+      e ->
+        Logger.warning("BeaconFetcher: FCU failed: #{Exception.message(e)}")
+        :ok
+    end
+  end
+
   # Fields that Engine API expects as hex quantities (not hashes/addresses)
   @quantity_fields MapSet.new([
     "blockNumber", "gasLimit", "gasUsed", "timestamp", "baseFeePerGas",
@@ -363,26 +383,6 @@ defmodule EthChain.BeaconFetcher do
   end
   defp to_hex(v), do: v
 
-  defp update_fork_choice(block_hash) do
-    zero_hash = "0x" <> String.duplicate("0", 64)
-
-    fc_state = %{
-      "headBlockHash" => block_hash,
-      "safeBlockHash" => block_hash,
-      "finalizedBlockHash" => zero_hash
-    }
-
-    try do
-      EthRpc.Engine.forkchoice_updated_v3([fc_state, nil])
-      report_engine("forkchoiceUpdated", "VALID")
-      :ok
-    rescue
-      e ->
-        Logger.warning("BeaconFetcher: FCU failed: #{Exception.message(e)}")
-        :ok
-    end
-  end
-
   # --- Helpers ---
 
   @doc false
@@ -406,7 +406,7 @@ defmodule EthChain.BeaconFetcher do
     end
 
     try do
-      EthDashboard.Collector.report_block(block_number, hash_bin, tx_count, gas_used)
+      apply(EthDashboard.Collector, :report_block, [block_number, hash_bin, tx_count, gas_used])
     catch
       _, _ -> :ok
     end
@@ -415,7 +415,7 @@ defmodule EthChain.BeaconFetcher do
   @spec report_engine(String.t(), String.t()) :: :ok
   defp report_engine(method, status) do
     try do
-      EthDashboard.Collector.report_engine(method, status)
+      apply(EthDashboard.Collector, :report_engine, [method, status])
     catch
       _, _ -> :ok
     end

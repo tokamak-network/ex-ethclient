@@ -179,11 +179,13 @@ defmodule EthDashboard.Collector do
 
     cond do
       beacon && beacon[:syncing] ->
-        target = beacon[:last_block_number] || 0
-        {"syncing", stored_block, target}
+        # last_block_number = actually synced block, stored_block = network head from forkchoice
+        current = beacon[:last_block_number] || 0
+        target = max(stored_block, current)
+        {"syncing", current, target}
 
       beacon && stored_block > 0 ->
-        target = beacon[:last_block_number] || stored_block
+        target = max(beacon[:last_block_number] || stored_block, stored_block)
         {"synced", stored_block, target}
 
       true ->

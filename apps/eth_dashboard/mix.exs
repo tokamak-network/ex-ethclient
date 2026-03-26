@@ -26,7 +26,10 @@ defmodule EthDashboard.MixProject do
     [
       {:bandit, "~> 1.6"},
       {:plug, "~> 1.16"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:eth_net, in_umbrella: true},
+      {:eth_storage, in_umbrella: true},
+      {:eth_chain, in_umbrella: true}
     ]
   end
 end

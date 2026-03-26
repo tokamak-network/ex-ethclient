@@ -39,12 +39,12 @@ defmodule EthChain.BlockPipeline do
       if mempool, do: Mempool.remove_block_transactions(block, mempool)
 
       try do
-        EthDashboard.Collector.report_block(
+        apply(EthDashboard.Collector, :report_block, [
           block.header.number,
           block_hash,
           length(block.transactions),
           block.header.gas_used
-        )
+        ])
       catch
         _, _ -> :ok
       end

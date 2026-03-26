@@ -666,6 +666,7 @@ defmodule EthVm.StateTestRunner do
           nonce,
           state_data,
           access_list_data,
+          <<>>,
           <<>>
         )
 

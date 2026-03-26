@@ -1,7 +1,7 @@
 use revm::context::result::ExecutionResult;
 use revm::context::{BlockEnv, Context, TxEnv};
 use revm::context_interface::block::BlobExcessGasAndPrice;
-use revm::context_interface::transaction::{AccessList, AccessListItem};
+use revm::context_interface::transaction::{AccessList, AccessListItem, Authorization, SignedAuthorization};
 use revm::database::InMemoryDB;
 use revm::handler::{MainBuilder, MainContext};
 use revm::primitives::hardfork::SpecId;
@@ -485,6 +485,36 @@ fn parse_blob_hashes(data: &[u8]) -> Option<Vec<B256>> {
     Some(hashes)
 }
 
+/// Parse EIP-7702 authorization list from binary data.
+///
+/// Format: concatenated entries of (chain_id:32 + address:20 + nonce:8 + y_parity:1 + r:32 + s:32) = 125 bytes each
+fn parse_authorization_list(data: &[u8]) -> Option<Vec<SignedAuthorization>> {
+    if data.is_empty() {
+        return Some(vec![]);
+    }
+    let entry_size = 32 + 20 + 8 + 1 + 32 + 32; // 125 bytes
+    if data.len() % entry_size != 0 {
+        return None;
+    }
+
+    let count = data.len() / entry_size;
+    let mut auth_list = Vec::with_capacity(count);
+
+    for i in 0..count {
+        let offset = i * entry_size;
+        let chain_id = U256::from_be_slice(&data[offset..offset + 32]);
+        let address = Address::from_slice(&data[offset + 32..offset + 52]);
+        let nonce = u64::from_be_bytes(data[offset + 52..offset + 60].try_into().ok()?);
+        let y_parity = data[offset + 60];
+        let r = U256::from_be_slice(&data[offset + 61..offset + 93]);
+        let s = U256::from_be_slice(&data[offset + 93..offset + 125]);
+
+        let inner = Authorization { chain_id, address, nonce };
+        auth_list.push(SignedAuthorization::new_unchecked(inner, y_parity, r, s));
+    }
+    Some(auth_list)
+}
+
 /// Shared helper to build result terms from EVM execution output.
 fn build_result_term<'a>(
     env: Env<'a>,
@@ -863,6 +893,7 @@ fn execute_tx_v3<'a>(
     state_data: Binary<'a>,
     access_list_data: Binary<'a>,
     blob_hashes_data: Binary<'a>,
+    authorization_list_data: Binary<'a>,
 ) -> NifResult<Term<'a>> {
     // Validate from address
     if from.len() != 20 {
@@ -904,6 +935,12 @@ fn execute_tx_v3<'a>(
     let blob_hashes = match parse_blob_hashes(blob_hashes_data.as_slice()) {
         Some(bh) => bh,
         None => return Ok((atoms::error(), atoms::invalid_blob_hashes()).encode(env)),
+    };
+
+    // Parse EIP-7702 authorization list
+    let authorization_list = match parse_authorization_list(authorization_list_data.as_slice()) {
+        Some(al) => al,
+        None => return Ok((atoms::error(), "invalid_authorization_list".encode(env)).encode(env)),
     };
 
     // Parse priority fee and blob gas fee
@@ -1002,6 +1039,7 @@ fn execute_tx_v3<'a>(
             tx.gas_priority_fee = gas_priority_fee;
             tx.blob_hashes = blob_hashes;
             tx.max_fee_per_blob_gas = max_fee_per_blob_gas;
+            tx.authorization_list = authorization_list;
         });
 
     let mut evm = ctx.build_mainnet();

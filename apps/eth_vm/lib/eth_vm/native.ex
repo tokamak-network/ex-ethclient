@@ -135,6 +135,7 @@ defmodule EthVm.Native do
     - state_data: binary-encoded pre-fetched account state
     - access_list_data: binary-encoded access list
     - blob_hashes_data: concatenated 32-byte blob versioned hashes
+    - authorization_list_data: binary-encoded EIP-7702 authorization list
   """
   @spec execute_tx_v3(
           non_neg_integer(),
@@ -154,6 +155,7 @@ defmodule EthVm.Native do
           binary(),
           binary(),
           non_neg_integer(),
+          binary(),
           binary(),
           binary(),
           binary()
@@ -178,7 +180,8 @@ defmodule EthVm.Native do
         _tx_nonce,
         _state_data,
         _access_list_data,
-        _blob_hashes_data
+        _blob_hashes_data,
+        _authorization_list_data
       ),
       do: :erlang.nif_error(:nif_not_loaded)
 

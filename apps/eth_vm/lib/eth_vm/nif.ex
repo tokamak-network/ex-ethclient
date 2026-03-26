@@ -65,7 +65,8 @@ defmodule EthVm.Nif do
         fields.nonce,
         state_data,
         fields.access_list_data,
-        fields.blob_hashes_data
+        fields.blob_hashes_data,
+        fields.authorization_list_data
       )
 
     case result do
@@ -232,6 +233,13 @@ defmodule EthVm.Nif do
         hashes -> encode_blob_hashes(hashes)
       end
 
+    authorization_list_data =
+      case Map.get(tx, :authorization_list) do
+        nil -> <<>>
+        [] -> <<>>
+        auths -> encode_authorization_list(auths)
+      end
+
     %{
       tx_type: type_byte,
       from: from,
@@ -244,7 +252,8 @@ defmodule EthVm.Nif do
       data: data,
       nonce: nonce,
       access_list_data: access_list_data,
-      blob_hashes_data: blob_hashes_data
+      blob_hashes_data: blob_hashes_data,
+      authorization_list_data: authorization_list_data
     }
   end
 
@@ -289,6 +298,28 @@ defmodule EthVm.Nif do
   defp encode_blob_hashes(hashes) do
     Enum.reduce(hashes, <<>>, fn hash, acc ->
       acc <> pad_hash(hash)
+    end)
+  end
+
+  # Encodes EIP-7702 authorization list as concatenated entries.
+  # Each entry: chain_id(32) + address(20) + nonce(8) + y_parity(1) + r(32) + s(32) = 125 bytes
+  @spec encode_authorization_list([map()]) :: binary()
+  defp encode_authorization_list(auths) do
+    Enum.reduce(auths, <<>>, fn auth, acc ->
+      chain_id = Map.get(auth, :chain_id, 0)
+      address = Map.get(auth, :address, <<0::160>>)
+      nonce = Map.get(auth, :nonce, 0)
+      y_parity = Map.get(auth, :y_parity, 0)
+      r = Map.get(auth, :r, 0)
+      s = Map.get(auth, :s, 0)
+
+      acc <>
+        <<chain_id::unsigned-big-256>> <>
+        pad_address(address) <>
+        <<nonce::unsigned-big-64>> <>
+        <<y_parity::unsigned-8>> <>
+        <<r::unsigned-big-256>> <>
+        <<s::unsigned-big-256>>
     end)
   end
 

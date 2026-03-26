@@ -14,6 +14,19 @@ defmodule EthRpc.Router do
   plug(:match)
   plug(:dispatch)
 
+  get "/health" do
+    health = EthChain.Health.check()
+
+    payload = %{
+      status: if(health.store == :up, do: "ok", else: "degraded"),
+      block_number: health.chain_head || 0,
+      peer_count: health.peer_count,
+      syncing: health.syncing
+    }
+
+    send_json(conn, 200, payload)
+  end
+
   post "/" do
     with {:ok, body, conn} <- Plug.Conn.read_body(conn),
          {:ok, decoded} <- Jason.decode(body) do

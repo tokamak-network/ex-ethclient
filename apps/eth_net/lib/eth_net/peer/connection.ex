@@ -146,7 +146,14 @@ defmodule EthNet.Peer.Connection do
                     do: FrameCodec.enable_snappy(state.codec),
                     else: state.codec
 
-                state = %{state | remote_hello: hello_msg, state: :status, codec: codec, eth_version: eth_ver}
+                state = %{
+                  state
+                  | remote_hello: hello_msg,
+                    state: :status,
+                    codec: codec,
+                    eth_version: eth_ver
+                }
+
                 send(self(), :send_status)
                 {:noreply, state}
             end
@@ -409,9 +416,7 @@ defmodule EthNet.Peer.Connection do
       "Peer: Status exchanged (eth/#{state.eth_version}) — remote head: 0x#{Base.encode16(status.best_hash, case: :lower) |> String.slice(0, 16)}..."
     )
 
-    Logger.info(
-      "Peer: Remote network_id=#{status.network_id}, TD=#{status.total_difficulty}"
-    )
+    Logger.info("Peer: Remote network_id=#{status.network_id}, TD=#{status.total_difficulty}")
 
     # Validate genesis hash and network_id against configured network
     network = configured_network()

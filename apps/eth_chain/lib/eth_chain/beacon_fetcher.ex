@@ -145,17 +145,30 @@ defmodule EthChain.BeaconFetcher do
   defp fetch_head_slot(endpoint) do
     url = "#{endpoint}/eth/v1/beacon/headers/head"
     headers = [{~c"Accept", ~c"application/json"}]
-    http_opts = [{:timeout, @http_timeout}, {:connect_timeout, @connect_timeout}, {:ssl, ssl_opts()}]
 
-    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [{:body_format, :binary}]) do
+    http_opts = [
+      {:timeout, @http_timeout},
+      {:connect_timeout, @connect_timeout},
+      {:ssl, ssl_opts()}
+    ]
+
+    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [
+           {:body_format, :binary}
+         ]) do
       {:ok, {{_, 200, _}, _, body}} ->
         case Jason.decode(body) do
           {:ok, %{"data" => %{"header" => %{"message" => %{"slot" => slot_str}}}}} ->
             {:ok, parse_slot(slot_str)}
-          _ -> {:error, :unexpected_format}
+
+          _ ->
+            {:error, :unexpected_format}
         end
-      {:ok, {{_, code, _}, _, _}} -> {:error, {:http_status, code}}
-      {:error, reason} -> {:error, reason}
+
+      {:ok, {{_, code, _}, _, _}} ->
+        {:error, {:http_status, code}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -163,7 +176,9 @@ defmodule EthChain.BeaconFetcher do
     start_slot = state.last_slot + 1
     end_slot = min(start_slot + @batch_size - 1, state.head_slot)
 
-    Logger.info("BeaconFetcher: syncing slots #{start_slot}..#{end_slot} (head: #{state.head_slot})")
+    Logger.info(
+      "BeaconFetcher: syncing slots #{start_slot}..#{end_slot} (head: #{state.head_slot})"
+    )
 
     state =
       Enum.reduce(start_slot..end_slot, state, fn slot, acc ->
@@ -186,17 +201,31 @@ defmodule EthChain.BeaconFetcher do
         end
       end)
 
-    pct = if state.head_slot > 0, do: Float.round(state.last_slot / state.head_slot * 100, 2), else: 0.0
-    Logger.info("BeaconFetcher: progress #{pct}% (slot #{state.last_slot}/#{state.head_slot}, #{state.blocks_stored} blocks)")
+    pct =
+      if state.head_slot > 0,
+        do: Float.round(state.last_slot / state.head_slot * 100, 2),
+        else: 0.0
+
+    Logger.info(
+      "BeaconFetcher: progress #{pct}% (slot #{state.last_slot}/#{state.head_slot}, #{state.blocks_stored} blocks)"
+    )
+
     state
   end
 
   defp fetch_block_by_slot(endpoint, slot) do
     url = "#{endpoint}/eth/v2/beacon/blocks/#{slot}"
     headers = [{~c"Accept", ~c"application/json"}]
-    http_opts = [{:timeout, @http_timeout}, {:connect_timeout, @connect_timeout}, {:ssl, ssl_opts()}]
 
-    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [{:body_format, :binary}]) do
+    http_opts = [
+      {:timeout, @http_timeout},
+      {:connect_timeout, @connect_timeout},
+      {:ssl, ssl_opts()}
+    ]
+
+    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [
+           {:body_format, :binary}
+         ]) do
       {:ok, {{_, 200, _}, _, body}} -> parse_beacon_block(body)
       {:ok, {{_, 404, _}, _, _}} -> {:error, {:http_status, 404}}
       {:ok, {{_, code, _}, _, _}} -> {:error, {:http_status, code}}
@@ -324,10 +353,12 @@ defmodule EthChain.BeaconFetcher do
 
   defp extract_status({:ok, %{"status" => s}}), do: s
   defp extract_status({:ok, %{"payloadStatus" => %{"status" => s}}}), do: s
+
   defp extract_status({:ok, map}) when is_map(map) do
     # Try to find status in any nested structure
     map["status"] || get_in(map, ["payloadStatus", "status"]) || "UNKNOWN"
   end
+
   defp extract_status(_), do: "UNKNOWN"
 
   @spec update_fork_choice(String.t() | nil) :: :ok
@@ -355,9 +386,14 @@ defmodule EthChain.BeaconFetcher do
 
   # Fields that Engine API expects as hex quantities (not hashes/addresses)
   @quantity_fields MapSet.new([
-    "blockNumber", "gasLimit", "gasUsed", "timestamp", "baseFeePerGas",
-    "blobGasUsed", "excessBlobGas"
-  ])
+                     "blockNumber",
+                     "gasLimit",
+                     "gasUsed",
+                     "timestamp",
+                     "baseFeePerGas",
+                     "blobGasUsed",
+                     "excessBlobGas"
+                   ])
 
   # Beacon API returns snake_case keys with decimal values.
   # Engine API expects camelCase keys with "0x..." hex values.
@@ -373,14 +409,20 @@ defmodule EthChain.BeaconFetcher do
     case String.split(key, "_") do
       [first | rest] ->
         first <> Enum.map_join(rest, "", &String.capitalize/1)
-      _ -> key
+
+      _ ->
+        key
     end
   end
 
   defp to_hex(v) when is_integer(v), do: "0x" <> Integer.to_string(v, 16)
+
   defp to_hex(v) when is_binary(v) do
-    if String.starts_with?(v, "0x"), do: v, else: "0x" <> Integer.to_string(String.to_integer(v), 16)
+    if String.starts_with?(v, "0x"),
+      do: v,
+      else: "0x" <> Integer.to_string(String.to_integer(v), 16)
   end
+
   defp to_hex(v), do: v
 
   # --- Helpers ---
@@ -400,10 +442,12 @@ defmodule EthChain.BeaconFetcher do
   defp report_block(block_number, block_hash, payload) do
     tx_count = length(payload["transactions"] || [])
     gas_used = parse_hex_or_int(payload["gasUsed"] || "0")
-    hash_bin = case block_hash do
-      "0x" <> hex -> Base.decode16!(hex, case: :mixed)
-      _ -> <<0::256>>
-    end
+
+    hash_bin =
+      case block_hash do
+        "0x" <> hex -> Base.decode16!(hex, case: :mixed)
+        _ -> <<0::256>>
+      end
 
     try do
       apply(EthDashboard.Collector, :report_block, [block_number, hash_bin, tx_count, gas_used])

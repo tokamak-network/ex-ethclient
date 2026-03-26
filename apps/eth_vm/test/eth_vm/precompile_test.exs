@@ -366,7 +366,10 @@ defmodule EthVm.PrecompileTest do
       # 2 entries: addr1 with 2 keys, addr2 with 1 key
       access_list_data =
         <<2::unsigned-big-32>> <>
-          addr1 <> <<2::unsigned-big-32>> <> key1 <> key2 <>
+          addr1 <>
+          <<2::unsigned-big-32>> <>
+          key1 <>
+          key2 <>
           addr2 <> <<1::unsigned-big-32>> <> key3
 
       assert {:ok, result} =

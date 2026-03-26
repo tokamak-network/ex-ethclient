@@ -159,7 +159,10 @@ defmodule EthNet.Peer.Manager do
           end
 
         :error ->
-          Logger.debug("PeerManager: Skipping invalid enode: #{String.slice(enode_uri, 0, 40)}...")
+          Logger.debug(
+            "PeerManager: Skipping invalid enode: #{String.slice(enode_uri, 0, 40)}..."
+          )
+
           acc
       end
     end)

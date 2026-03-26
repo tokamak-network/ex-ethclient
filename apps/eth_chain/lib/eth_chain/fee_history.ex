@@ -50,7 +50,8 @@ defmodule EthChain.FeeHistory do
               {bf_acc ++ [base_fee], gr_acc ++ [ratio], rw_acc ++ [block_rewards]}
 
             _ ->
-              {bf_acc ++ [0], gr_acc ++ [0.0], rw_acc ++ [Enum.map(reward_percentiles, fn _ -> 0 end)]}
+              {bf_acc ++ [0], gr_acc ++ [0.0],
+               rw_acc ++ [Enum.map(reward_percentiles, fn _ -> 0 end)]}
           end
         end)
 

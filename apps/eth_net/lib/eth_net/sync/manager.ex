@@ -198,10 +198,8 @@ defmodule EthNet.Sync.Manager do
         state = %{
           state
           | downloaded_headers: state.downloaded_headers ++ decoded_headers,
-            received_headers:
-              Map.put(state.received_headers, request_id, decoded_headers),
-            pending_header_requests:
-              Map.delete(state.pending_header_requests, request_id)
+            received_headers: Map.put(state.received_headers, request_id, decoded_headers),
+            pending_header_requests: Map.delete(state.pending_header_requests, request_id)
         }
 
         # Request bodies for these headers
@@ -213,15 +211,18 @@ defmodule EthNet.Sync.Manager do
 
       {:error, reason} ->
         Logger.warning("Sync: Failed to decode headers: #{inspect(reason)}")
-        state = %{state | pending_header_requests: Map.delete(state.pending_header_requests, request_id)}
+
+        state = %{
+          state
+          | pending_header_requests: Map.delete(state.pending_header_requests, request_id)
+        }
+
         {:noreply, state}
     end
   end
 
   def handle_cast({:bodies, _peer, request_id, bodies}, state) do
-    Logger.info(
-      "Sync: Received #{length(bodies)} bodies (req=#{request_id})"
-    )
+    Logger.info("Sync: Received #{length(bodies)} bodies (req=#{request_id})")
 
     case Map.fetch(state.pending_body_requests, request_id) do
       {:ok, {_peer, headers_request_id}} ->

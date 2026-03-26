@@ -29,8 +29,7 @@ defmodule EthRpc.Application do
             id: :rpc_server
           ),
           Supervisor.child_spec(
-            {Bandit,
-             plug: EthRpc.EngineRouter, port: engine_port, scheme: :http},
+            {Bandit, plug: EthRpc.EngineRouter, port: engine_port, scheme: :http},
             id: :engine_server
           )
         ]

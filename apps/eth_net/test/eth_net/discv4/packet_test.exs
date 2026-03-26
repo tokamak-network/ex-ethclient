@@ -79,7 +79,7 @@ defmodule EthNet.DiscV4.PacketTest do
 
       # Build a NEIGHBOURS packet manually with IPv6-mapped IP
       node_list = [[ipv6_mapped, <<0x76, 0x5F>>, <<0x76, 0x5F>>, node_id]]
-      expiration = <<(System.system_time(:second) + 20)::big-unsigned-32>>
+      expiration = <<System.system_time(:second) + 20::big-unsigned-32>>
       rlp_data = ExRLP.encode([node_list, expiration])
 
       # Sign and wrap
@@ -103,7 +103,7 @@ defmodule EthNet.DiscV4.PacketTest do
       node_id = :crypto.strong_rand_bytes(64)
 
       node_list = [[ipv6, <<0x76, 0x5F>>, <<0x76, 0x5F>>, node_id]]
-      expiration = <<(System.system_time(:second) + 20)::big-unsigned-32>>
+      expiration = <<System.system_time(:second) + 20::big-unsigned-32>>
       rlp_data = ExRLP.encode([node_list, expiration])
 
       type = 4

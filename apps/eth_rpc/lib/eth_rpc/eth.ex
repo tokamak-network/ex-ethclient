@@ -61,18 +61,13 @@ defmodule EthRpc.Eth do
     "engine_getPayloadV2" => :engine_get_payload_v2,
     "engine_getPayloadV3" => :engine_get_payload_v3,
     "engine_getPayloadV4" => :engine_get_payload_v4,
-    "engine_getPayloadBodiesByHashV1" =>
-      :engine_get_payload_bodies_by_hash_v1,
-    "engine_getPayloadBodiesByHashV2" =>
-      :engine_get_payload_bodies_by_hash_v2,
-    "engine_getPayloadBodiesByRangeV1" =>
-      :engine_get_payload_bodies_by_range_v1,
-    "engine_getPayloadBodiesByRangeV2" =>
-      :engine_get_payload_bodies_by_range_v2,
+    "engine_getPayloadBodiesByHashV1" => :engine_get_payload_bodies_by_hash_v1,
+    "engine_getPayloadBodiesByHashV2" => :engine_get_payload_bodies_by_hash_v2,
+    "engine_getPayloadBodiesByRangeV1" => :engine_get_payload_bodies_by_range_v1,
+    "engine_getPayloadBodiesByRangeV2" => :engine_get_payload_bodies_by_range_v2,
     "engine_getBlobsV1" => :engine_get_blobs_v1,
     "engine_getClientVersionV1" => :engine_get_client_version_v1,
-    "engine_exchangeTransitionConfigurationV1" =>
-      :engine_exchange_transition_config_v1,
+    "engine_exchangeTransitionConfigurationV1" => :engine_exchange_transition_config_v1,
     "engine_exchangeCapabilities" => :engine_exchange_capabilities,
     "eth_feeHistory" => :eth_fee_history,
     "eth_maxPriorityFeePerGas" => :eth_max_priority_fee_per_gas,
@@ -658,8 +653,7 @@ defmodule EthRpc.Eth do
   end
 
   def eth_fee_history(_params) do
-    {:error, -32602,
-     "Invalid params: expected [blockCount, newestBlock, rewardPercentiles]"}
+    {:error, -32602, "Invalid params: expected [blockCount, newestBlock, rewardPercentiles]"}
   end
 
   @doc false
@@ -1157,7 +1151,9 @@ defmodule EthRpc.Eth do
       end
 
     case Map.get(obj, "blockHash") do
-      nil -> filter
+      nil ->
+        filter
+
       hash_hex ->
         case Hex.decode_data(hash_hex) do
           {:ok, bin} -> Map.put(filter, :block_hash, bin)
@@ -1302,7 +1298,9 @@ defmodule EthRpc.Eth do
   @spec decode_quantity_field(map(), String.t(), non_neg_integer()) :: non_neg_integer()
   defp decode_quantity_field(obj, key, default) do
     case Map.get(obj, key) do
-      nil -> default
+      nil ->
+        default
+
       hex ->
         case Hex.decode_quantity(hex) do
           {:ok, val} -> val
@@ -1314,7 +1312,9 @@ defmodule EthRpc.Eth do
   @spec decode_data_field(map(), String.t()) :: binary()
   defp decode_data_field(obj, key) do
     case Map.get(obj, key) do
-      nil -> <<>>
+      nil ->
+        <<>>
+
       hex ->
         case Hex.decode_data(hex) do
           {:ok, bin} -> bin

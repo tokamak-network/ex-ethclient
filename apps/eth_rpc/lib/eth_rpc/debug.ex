@@ -118,37 +118,41 @@ defmodule EthRpc.Debug do
       {:ok, []}
     else
       case resolve_block_number(block_id) do
-      {:ok, nil} ->
-        {:ok, []}
+        {:ok, nil} ->
+          {:ok, []}
 
-      {:ok, number} ->
-        store = store_server()
+        {:ok, number} ->
+          store = store_server()
 
-        case BlockStore.get_block_by_number(number, store) do
-          {:ok, %{transactions: txs} = block} when is_list(txs) ->
-            block_hash = EthStorage.Encoding.block_hash(block.header)
+          case BlockStore.get_block_by_number(number, store) do
+            {:ok, %{transactions: txs} = block} when is_list(txs) ->
+              block_hash = EthStorage.Encoding.block_hash(block.header)
 
-            receipts =
-              txs
-              |> Enum.with_index()
-              |> Enum.flat_map(fn {_tx, idx} ->
-                case Store.get_receipt(store, block_hash, idx) do
-                  {:ok, nil} -> []
-                  {:ok, receipt_bin} ->
-                    receipt = :erlang.binary_to_term(receipt_bin)
-                    [Hex.encode_data(:erlang.term_to_binary(receipt))]
-                  _ -> []
-                end
-              end)
+              receipts =
+                txs
+                |> Enum.with_index()
+                |> Enum.flat_map(fn {_tx, idx} ->
+                  case Store.get_receipt(store, block_hash, idx) do
+                    {:ok, nil} ->
+                      []
 
-            {:ok, receipts}
+                    {:ok, receipt_bin} ->
+                      receipt = :erlang.binary_to_term(receipt_bin)
+                      [Hex.encode_data(:erlang.term_to_binary(receipt))]
 
-          _ ->
-            {:ok, []}
-        end
+                    _ ->
+                      []
+                  end
+                end)
 
-      _ ->
-        {:ok, []}
+              {:ok, receipts}
+
+            _ ->
+              {:ok, []}
+          end
+
+        _ ->
+          {:ok, []}
       end
     end
   end
@@ -165,14 +169,18 @@ defmodule EthRpc.Debug do
     store = store_server()
 
     case resolve_block_number(block_id) do
-      {:ok, nil} -> {:ok, nil}
+      {:ok, nil} ->
+        {:ok, nil}
+
       {:ok, number} ->
         case BlockStore.get_block_by_number(number, store) do
           {:ok, %{header: header}} -> {:ok, header}
           {:ok, nil} -> {:ok, nil}
           error -> error
         end
-      error -> error
+
+      error ->
+        error
     end
   end
 
@@ -192,7 +200,9 @@ defmodule EthRpc.Debug do
           {:ok, non_neg_integer() | nil} | {:error, term()}
   defp resolve_block_number(hex_str) do
     case Hex.decode_quantity(hex_str) do
-      {:ok, number} -> {:ok, number}
+      {:ok, number} ->
+        {:ok, number}
+
       {:error, _} ->
         # Try as block hash
         case Hex.decode_data(hex_str) do
@@ -221,11 +231,15 @@ defmodule EthRpc.Debug do
 
       {:ok, {block_hash, tx_index}} ->
         case Store.get_block_body(store, block_hash) do
-          {:ok, nil} -> {:ok, nil}
+          {:ok, nil} ->
+            {:ok, nil}
+
           {:ok, body_bin} ->
             body = :erlang.binary_to_term(body_bin)
             {:ok, Enum.at(body.transactions, tx_index)}
-          _ -> {:ok, nil}
+
+          _ ->
+            {:ok, nil}
         end
 
       _ ->

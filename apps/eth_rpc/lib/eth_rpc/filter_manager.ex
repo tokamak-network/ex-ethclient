@@ -191,6 +191,6 @@ defmodule EthRpc.FilterManager do
 
   @spec encode_filter_id(non_neg_integer()) :: String.t()
   defp encode_filter_id(n) do
-    "0x" <> Integer.to_string(n, 16) |> String.downcase()
+    ("0x" <> Integer.to_string(n, 16)) |> String.downcase()
   end
 end

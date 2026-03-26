@@ -38,11 +38,11 @@ defmodule ExEthclient.MixProject do
       extras: ["README.md"],
       groups_for_modules: [
         "Core Types": ~r/EthCore\..*/,
-        "Cryptography": ~r/EthCrypto\..*/,
-        "Networking": ~r/EthNet\..*/,
-        "Storage": ~r/EthStorage\..*/,
-        "EVM": ~r/EthVm\..*/,
-        "Chain": ~r/EthChain\..*/,
+        Cryptography: ~r/EthCrypto\..*/,
+        Networking: ~r/EthNet\..*/,
+        Storage: ~r/EthStorage\..*/,
+        EVM: ~r/EthVm\..*/,
+        Chain: ~r/EthChain\..*/,
         "JSON-RPC": ~r/EthRpc\..*/
       ]
     ]

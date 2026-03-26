@@ -208,8 +208,11 @@ defmodule EthChain.BlockPipelineTest do
       assert r1.cumulative_gas_used == 42_000
 
       # Both tx hashes indexed
-      assert {:ok, {^block_hash, 0}} = Store.get_tx_location(store, SignedTransaction.tx_hash(tx1))
-      assert {:ok, {^block_hash, 1}} = Store.get_tx_location(store, SignedTransaction.tx_hash(tx2))
+      assert {:ok, {^block_hash, 0}} =
+               Store.get_tx_location(store, SignedTransaction.tx_hash(tx1))
+
+      assert {:ok, {^block_hash, 1}} =
+               Store.get_tx_location(store, SignedTransaction.tx_hash(tx2))
     end
   end
 

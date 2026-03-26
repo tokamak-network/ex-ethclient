@@ -13,6 +13,7 @@ defmodule EthVm.NifStateTest do
     test "simple transfer with pre-loaded state" do
       # Build state with sender having enough balance
       sender_balance = 1_000_000_000_000_000_000
+
       accounts = %{
         @from_addr => %{nonce: 0, balance: sender_balance, code: <<>>, storage: %{}},
         @to_addr => %{nonce: 0, balance: 0, code: <<>>, storage: %{}}
@@ -45,6 +46,7 @@ defmodule EthVm.NifStateTest do
       contract_code = <<0x60, 0x42, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3>>
 
       sender_balance = 1_000_000_000_000_000_000
+
       accounts = %{
         @from_addr => %{nonce: 0, balance: sender_balance, code: <<>>, storage: %{}},
         @to_addr => %{nonce: 0, balance: 0, code: contract_code, storage: %{}}
@@ -74,6 +76,7 @@ defmodule EthVm.NifStateTest do
 
     test "returns state changes after execution" do
       sender_balance = 1_000_000_000_000_000_000
+
       accounts = %{
         @from_addr => %{nonce: 0, balance: sender_balance, code: <<>>, storage: %{}},
         @to_addr => %{nonce: 0, balance: 0, code: <<>>, storage: %{}}

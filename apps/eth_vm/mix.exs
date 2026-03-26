@@ -10,10 +10,14 @@ defmodule EthVm.MixProject do
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
@@ -27,6 +31,8 @@ defmodule EthVm.MixProject do
   defp deps do
     [
       {:eth_core, in_umbrella: true},
+      {:eth_storage, in_umbrella: true},
+      {:jason, "~> 1.4"},
       {:rustler, "~> 0.36.1", runtime: false}
     ]
   end

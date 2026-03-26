@@ -28,6 +28,7 @@ defmodule EthNet.MixProject do
     [
       {:eth_core, in_umbrella: true},
       {:eth_crypto, in_umbrella: true},
+      {:eth_storage, in_umbrella: true},
       {:snappyer, "~> 1.2"}
     ]
   end

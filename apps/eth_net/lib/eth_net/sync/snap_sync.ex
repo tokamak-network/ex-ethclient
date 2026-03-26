@@ -19,7 +19,9 @@ defmodule EthNet.Sync.SnapSync do
 
   import Bitwise
 
+  alias EthCore.Types.Account
   alias EthNet.Protocol.Snap1
+  alias EthStorage.{Encoding, Store}
 
   @type sync_status ::
           :idle
@@ -29,7 +31,8 @@ defmodule EthNet.Sync.SnapSync do
           | :healing
           | :complete
 
-  @type request_type :: :account_range | :storage_ranges | :byte_codes | :trie_nodes
+  @type request_type ::
+          :account_range | {:storage_ranges, [binary()]} | :byte_codes | :trie_nodes
 
   @type t :: %__MODULE__{
           status: sync_status(),
@@ -199,8 +202,9 @@ defmodule EthNet.Sync.SnapSync do
   end
 
   def handle_cast({:storage_ranges, request_id, slots, _proof}, state) do
+    account_hashes = extract_storage_accounts(state, request_id)
     state = complete_request(state, request_id)
-    state = process_storage_ranges(state, slots)
+    state = process_storage_ranges(state, slots, account_hashes)
     state = check_phase_complete(state)
     {:noreply, state}
   end
@@ -329,7 +333,7 @@ defmodule EthNet.Sync.SnapSync do
           Map.put(
             state.pending_requests,
             request_id,
-            {:storage_ranges, peer, System.monotonic_time(:millisecond)}
+            {{:storage_ranges, batch}, peer, System.monotonic_time(:millisecond)}
           )
 
         %{
@@ -360,9 +364,7 @@ defmodule EthNet.Sync.SnapSync do
         {_code, _payload} =
           Snap1.encode_get_byte_codes(request_id, batch, @response_bytes)
 
-        Logger.debug(
-          "SnapSync: Requesting #{length(batch)} byte codes (req=#{request_id})"
-        )
+        Logger.debug("SnapSync: Requesting #{length(batch)} byte codes (req=#{request_id})")
 
         pending_reqs =
           Map.put(
@@ -399,9 +401,7 @@ defmodule EthNet.Sync.SnapSync do
         {_code, _payload} =
           Snap1.encode_get_trie_nodes(request_id, state.pivot_root, batch, @response_bytes)
 
-        Logger.debug(
-          "SnapSync: Requesting #{length(batch)} trie nodes (req=#{request_id})"
-        )
+        Logger.debug("SnapSync: Requesting #{length(batch)} trie nodes (req=#{request_id})")
 
         pending_reqs =
           Map.put(
@@ -424,8 +424,11 @@ defmodule EthNet.Sync.SnapSync do
   @spec process_account_range(t(), list()) :: t()
   defp process_account_range(state, accounts) do
     {new_storage, new_codes, last_hash} =
-      Enum.reduce(accounts, {state.pending_storage, state.pending_codes, state.account_start},
-        fn {hash, _nonce, _balance, storage_root, code_hash}, {stor, codes, _last} ->
+      Enum.reduce(
+        accounts,
+        {state.pending_storage, state.pending_codes, state.account_start},
+        fn {hash, nonce, balance, storage_root, code_hash}, {stor, codes, _last} ->
+          persist_account(hash, nonce, balance, storage_root, code_hash)
           stor = if storage_root != @empty_trie_root, do: [hash | stor], else: stor
           codes = if code_hash != @empty_code_hash, do: [code_hash | codes], else: codes
           {stor, codes, hash}
@@ -444,20 +447,40 @@ defmodule EthNet.Sync.SnapSync do
     }
   end
 
-  @spec process_storage_ranges(t(), list()) :: t()
-  defp process_storage_ranges(state, slots) do
-    total = Enum.reduce(slots, 0, fn account_slots, acc -> acc + length(account_slots) end)
+  @spec process_storage_ranges(t(), list(), [binary()]) :: t()
+  defp process_storage_ranges(state, slots, account_hashes) do
+    total =
+      if length(account_hashes) == length(slots) do
+        slots
+        |> Enum.zip(account_hashes)
+        |> Enum.reduce(0, fn {account_slots, account_hash}, acc ->
+          Enum.each(account_slots, fn {slot_hash, value} ->
+            persist_storage_slot(account_hash, slot_hash, value)
+          end)
+
+          acc + length(account_slots)
+        end)
+      else
+        Logger.warning(
+          "SnapSync: Cannot correlate storage slots with accounts " <>
+            "(#{length(slots)} slot groups, #{length(account_hashes)} account hashes)"
+        )
+
+        Enum.reduce(slots, 0, fn account_slots, acc -> acc + length(account_slots) end)
+      end
 
     %{state | storage_downloaded: state.storage_downloaded + total}
   end
 
   @spec process_byte_codes(t(), [binary()]) :: t()
   defp process_byte_codes(state, codes) do
+    Enum.each(codes, &persist_bytecode/1)
     %{state | codes_downloaded: state.codes_downloaded + length(codes)}
   end
 
   @spec process_trie_nodes(t(), [binary()]) :: t()
   defp process_trie_nodes(state, nodes) do
+    Enum.each(nodes, &persist_trie_node/1)
     %{state | nodes_healed: state.nodes_healed + length(nodes)}
   end
 
@@ -465,9 +488,7 @@ defmodule EthNet.Sync.SnapSync do
 
   @spec transition_from_accounts(t()) :: t()
   defp transition_from_accounts(state) do
-    Logger.info(
-      "SnapSync: Account download complete (#{state.accounts_downloaded} accounts)"
-    )
+    Logger.info("SnapSync: Account download complete (#{state.accounts_downloaded} accounts)")
 
     if state.pending_storage != [] do
       Logger.info(
@@ -516,7 +537,9 @@ defmodule EthNet.Sync.SnapSync do
   @spec check_phase_complete(t()) :: t()
   defp check_phase_complete(%{status: :downloading_storage} = state) do
     has_pending_storage_requests? =
-      Enum.any?(state.pending_requests, fn {_id, {type, _, _}} -> type == :storage_ranges end)
+      Enum.any?(state.pending_requests, fn {_id, {type, _, _}} ->
+        match?({:storage_ranges, _}, type)
+      end)
 
     if state.pending_storage == [] and not has_pending_storage_requests? do
       transition_from_storage(state)
@@ -561,6 +584,65 @@ defmodule EthNet.Sync.SnapSync do
   end
 
   defp check_phase_complete(state), do: state
+
+  # --- Private: persistence helpers ---
+
+  @spec persist_account(binary(), non_neg_integer(), non_neg_integer(), binary(), binary()) ::
+          :ok
+  defp persist_account(address_hash, nonce, balance, storage_root, code_hash) do
+    account = %Account{
+      nonce: nonce,
+      balance: balance,
+      storage_root: storage_root,
+      code_hash: code_hash
+    }
+
+    encoded = Encoding.encode_account(account)
+    safe_store(:put_account, [address_hash, encoded], "account")
+  end
+
+  @spec persist_storage_slot(binary(), binary(), binary()) :: :ok
+  defp persist_storage_slot(account_hash, slot_hash, value) do
+    # Key storage slots under a composite key of account_hash + slot_hash
+    key = EthCrypto.Hash.keccak256(account_hash <> slot_hash)
+    safe_store(:put_storage_trie_node, [key, value], "storage slot")
+  end
+
+  @spec persist_bytecode(binary()) :: :ok
+  defp persist_bytecode(code) do
+    code_hash = EthCrypto.Hash.keccak256(code)
+    safe_store(:put_account_code, [code_hash, code], "bytecode")
+  end
+
+  @spec persist_trie_node(binary()) :: :ok
+  defp persist_trie_node(node_data) do
+    node_hash = EthCrypto.Hash.keccak256(node_data)
+    safe_store(:put_trie_node, [node_hash, node_data], "trie node")
+  end
+
+  @spec safe_store(atom(), list(), String.t()) :: :ok
+  defp safe_store(function, args, label) do
+    case apply(Store, function, args) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("SnapSync: Failed to persist #{label}: #{inspect(reason)}")
+        :ok
+    end
+  catch
+    :exit, reason ->
+      Logger.warning("SnapSync: Store unavailable for #{label}: #{inspect(reason)}")
+      :ok
+  end
+
+  @spec extract_storage_accounts(t(), non_neg_integer()) :: [binary()]
+  defp extract_storage_accounts(state, request_id) do
+    case Map.get(state.pending_requests, request_id) do
+      {{:storage_ranges, account_hashes}, _peer, _time} -> account_hashes
+      _ -> []
+    end
+  end
 
   # --- Private: utilities ---
 

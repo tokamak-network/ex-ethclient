@@ -14,6 +14,7 @@ defmodule EthNet.Application do
         [
           {EthNet.NodeKey, datadir: datadir},
           {EthNet.DiscV4.Server, port: port, chain: chain},
+          {EthNet.Peer.Scorer, []},
           {EthNet.Peer.ConnectionSupervisor, []},
           {EthNet.Peer.Manager, []}
         ]

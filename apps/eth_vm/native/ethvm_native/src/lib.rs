@@ -86,7 +86,9 @@ fn u256_to_be_bytes(val: &U256) -> Vec<u8> {
 ///   - Frontier:     block >= 0
 fn spec_id_for_block(block_number: u64, block_timestamp: u64) -> SpecId {
     // Post-merge forks are timestamp-based
-    if block_timestamp >= 1_710_338_135 {
+    if block_timestamp >= 1_900_000_000 {
+        SpecId::PRAGUE
+    } else if block_timestamp >= 1_710_338_135 {
         SpecId::CANCUN
     } else if block_timestamp >= 1_681_338_455 {
         SpecId::SHANGHAI
@@ -576,9 +578,12 @@ fn build_result_term<'a>(
                     .map_put(atoms::balance().encode(env), balance_bin)
                     .unwrap();
 
-                // Include contract code if present
+                // Include contract code if present.
+                // Use original_bytes() to get un-padded bytecode (bytecode()
+                // returns analysis-padded bytes which would produce wrong
+                // code_hash in the state trie).
                 let code_bin = match &account.info.code {
-                    Some(bytecode) => make_binary(env, bytecode.bytecode()),
+                    Some(bytecode) => make_binary(env, bytecode.original_bytes().as_ref()),
                     None => make_binary(env, &[]),
                 };
                 let acct_map = acct_map

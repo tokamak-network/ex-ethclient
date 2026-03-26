@@ -288,6 +288,52 @@ defmodule EthVm.StateTestRunner do
 
   @spec maybe_set_fork_timestamp(EthVm.Types.Environment.t(), String.t()) ::
           EthVm.Types.Environment.t()
+  defp maybe_set_fork_timestamp(env, "Cancun") do
+    # Set timestamp high enough for Cancun detection in spec_id_for_block
+    %{env | timestamp: max(env.timestamp, 1_710_338_135)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Prague") do
+    # Prague needs a timestamp beyond Cancun; use a large future timestamp
+    %{env | timestamp: max(env.timestamp, 1_900_000_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Shanghai") do
+    %{env | timestamp: max(env.timestamp, 1_681_338_455)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Merge") do
+    %{env | number: max(env.number, 15_537_394)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "London") do
+    %{env | number: max(env.number, 12_965_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Berlin") do
+    %{env | number: max(env.number, 12_244_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Istanbul") do
+    %{env | number: max(env.number, 9_069_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Constantinople") do
+    %{env | number: max(env.number, 7_280_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "ConstantinopleFix") do
+    %{env | number: max(env.number, 7_280_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Byzantium") do
+    %{env | number: max(env.number, 4_370_000)}
+  end
+
+  defp maybe_set_fork_timestamp(env, "Homestead") do
+    %{env | number: max(env.number, 1_150_000)}
+  end
+
   defp maybe_set_fork_timestamp(env, _fork), do: env
 
   @spec build_block_hash_lookup(map()) :: (non_neg_integer() -> binary() | nil) | nil
@@ -637,11 +683,12 @@ defmodule EthVm.StateTestRunner do
         ) ::
           binary()
   defp compute_post_state_root(pre_trie, pre_accounts, exec_result, _env) do
-    account_updates = Map.get(exec_result, :account_updates, %{})
+    # The NIF returns state changes under :state_changes, not :account_updates
+    state_changes = Map.get(exec_result, :state_changes, %{})
 
-    # Apply account updates from execution result to the pre-state trie
+    # Apply state changes from execution result to the pre-state trie
     updated_trie =
-      Enum.reduce(account_updates, pre_trie, fn {address, update}, trie ->
+      Enum.reduce(state_changes, pre_trie, fn {address, update}, trie ->
         address_bin =
           if is_binary(address) and byte_size(address) == 20 do
             address
@@ -654,9 +701,34 @@ defmodule EthVm.StateTestRunner do
           Map.get(pre_accounts, address_bin, %{nonce: 0, balance: 0, code: <<>>, storage: %{}})
 
         new_nonce = Map.get(update, :nonce, existing.nonce)
-        new_balance = Map.get(update, :balance, existing.balance)
+
+        # Balance from the NIF is a big-endian binary; convert to integer
+        raw_balance = Map.get(update, :balance, existing.balance)
+
+        new_balance =
+          cond do
+            is_integer(raw_balance) -> raw_balance
+            is_binary(raw_balance) and byte_size(raw_balance) == 0 -> 0
+            is_binary(raw_balance) -> :binary.decode_unsigned(raw_balance)
+            true -> 0
+          end
+
+        # Code from the NIF is bytecode binary
         new_code = Map.get(update, :code, existing.code)
-        new_storage = Map.merge(existing.storage, Map.get(update, :storage, %{}))
+
+        # Storage from the NIF uses trimmed big-endian keys/values.
+        # We need to normalize to 32-byte padded keys for consistency with pre-state.
+        nif_storage = Map.get(update, :storage, %{})
+
+        normalized_storage =
+          Enum.reduce(nif_storage, %{}, fn {key, val}, acc ->
+            padded_key = pad_to_32_bytes(key)
+            padded_val = pad_to_32_bytes(val)
+            Map.put(acc, padded_key, padded_val)
+          end)
+
+        # Merge: NIF storage overwrites pre-state storage slots
+        new_storage = Map.merge(existing.storage, normalized_storage)
 
         code_hash =
           if new_code == <<>> or is_nil(new_code) do
@@ -686,6 +758,18 @@ defmodule EthVm.StateTestRunner do
       end)
 
     Trie.root_hash(updated_trie)
+  end
+
+  @spec pad_to_32_bytes(binary()) :: binary()
+  defp pad_to_32_bytes(bin) when byte_size(bin) == 32, do: bin
+
+  defp pad_to_32_bytes(bin) when is_binary(bin) and byte_size(bin) < 32 do
+    padding = 32 - byte_size(bin)
+    <<0::size(padding * 8)>> <> bin
+  end
+
+  defp pad_to_32_bytes(bin) when is_binary(bin) do
+    binary_part(bin, byte_size(bin) - 32, 32)
   end
 
   # --- Hex decoding helpers ---

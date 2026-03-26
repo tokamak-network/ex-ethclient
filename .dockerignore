@@ -1,0 +1,12 @@
+_build/
+deps/
+.elixir_ls/
+.git/
+data/
+data_sepolia/
+doc/
+*.beam
+*.ez
+.fetch
+.claude/
+hive/

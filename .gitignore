@@ -19,8 +19,9 @@ erl_crash.dump
 # Temporary files, for example, from tests.
 /tmp/
 
-# Node key (private key)
-/data/nodekey
+# Local data directories
+/data/
+/data_sepolia/
 apps/eth_storage/native/rocks_native/target/
 apps/eth_vm/native/ethvm_native/target/
 apps/eth_vm/priv/

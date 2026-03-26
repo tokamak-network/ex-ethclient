@@ -104,6 +104,10 @@ defmodule EthChain.Fork do
   @spec blob_transactions?(t()) :: boolean()
   def blob_transactions?(fork), do: fork_index(fork) >= fork_index(:cancun)
 
+  @doc "Returns true if the fork supports Prague features (Prague and later)."
+  @spec prague?(t()) :: boolean()
+  def prague?(fork), do: fork_index(fork) >= fork_index(:prague)
+
   # Ordered fork indices for comparison
   @fork_order [
     :frontier,

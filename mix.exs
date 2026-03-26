@@ -7,9 +7,28 @@ defmodule ExEthclient.MixProject do
       version: "0.1.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      releases: releases(),
       name: "ex_ethclient",
       source_url: "https://github.com/tokamak-network/ex_ethclient",
       docs: docs()
+    ]
+  end
+
+  defp releases do
+    [
+      ex_ethclient: [
+        applications: [
+          eth_core: :permanent,
+          eth_crypto: :permanent,
+          eth_net: :permanent,
+          eth_storage: :permanent,
+          eth_vm: :permanent,
+          eth_chain: :permanent,
+          eth_rpc: :permanent,
+          eth_dashboard: :permanent
+        ],
+        cookie: :ex_ethclient_cookie
+      ]
     ]
   end
 

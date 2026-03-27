@@ -43,6 +43,41 @@ defmodule EthChain.ForkTest do
     end
   end
 
+  describe "active_fork/3 holesky" do
+    test "returns paris at genesis for holesky" do
+      assert Fork.active_fork(0, 0, :holesky) == :paris
+    end
+
+    test "returns shanghai at holesky activation timestamp" do
+      assert Fork.active_fork(0, 1_696_000_704, :holesky) == :shanghai
+    end
+
+    test "returns cancun at holesky activation timestamp" do
+      assert Fork.active_fork(0, 1_707_305_664, :holesky) == :cancun
+    end
+
+    test "returns prague at holesky activation timestamp" do
+      assert Fork.active_fork(0, 1_740_434_112, :holesky) == :prague
+    end
+
+    test "returns paris before shanghai activation on holesky" do
+      assert Fork.active_fork(0, 1_696_000_703, :holesky) == :paris
+    end
+  end
+
+  describe "fork_schedule/1 holesky" do
+    test "returns holesky fork schedule" do
+      schedule = Fork.fork_schedule(:holesky)
+      assert length(schedule) == 4
+
+      forks = Enum.map(schedule, &elem(&1, 0))
+      assert :paris in forks
+      assert :shanghai in forks
+      assert :cancun in forks
+      assert :prague in forks
+    end
+  end
+
   describe "eip1559?/1" do
     test "false for pre-London forks" do
       refute Fork.eip1559?(:frontier)

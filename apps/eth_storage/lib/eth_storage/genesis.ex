@@ -1,5 +1,5 @@
 defmodule EthStorage.Genesis do
-  @moduledoc "Genesis block initialization for Ethereum mainnet and Sepolia testnet."
+  @moduledoc "Genesis block initialization for Ethereum mainnet, Sepolia, and Holesky testnets."
 
   alias EthCore.Types.{Block, BlockHeader}
   alias EthStorage.{Encoding, Store}
@@ -40,6 +40,15 @@ defmodule EthStorage.Genesis do
   @sepolia_extra_data <<0x53, 0x65, 0x70, 0x6F, 0x6C, 0x69, 0x61, 0x2C, 0x20, 0x41, 0x74, 0x68,
                         0x65, 0x6E, 0x73, 0x2C, 0x20, 0x41, 0x74, 0x74, 0x69, 0x63, 0x61, 0x2C,
                         0x20, 0x47, 0x72, 0x65, 0x65, 0x63, 0x65, 0x21>>
+
+  # Holesky genesis state root
+  @holesky_state_root Base.decode16!(
+                        "69D8C9D72F6FA4AD42D4702B433707212F90DB395EB54DC20BC85DE253788783",
+                        case: :upper
+                      )
+
+  # "Holesky" in hex
+  @holesky_extra_data <<0x48, 0x6F, 0x6C, 0x65, 0x73, 0x6B, 0x79>>
 
   @doc "Returns the mainnet genesis block header."
   @spec mainnet_header() :: BlockHeader.t()
@@ -85,10 +94,33 @@ defmodule EthStorage.Genesis do
     }
   end
 
+  @doc "Returns the Holesky genesis block header."
+  @spec holesky_header() :: BlockHeader.t()
+  def holesky_header do
+    %BlockHeader{
+      parent_hash: @zero_hash,
+      ommers_hash: @empty_ommers_hash,
+      coinbase: @zero_address,
+      state_root: @holesky_state_root,
+      transactions_root: @empty_trie_root,
+      receipts_root: @empty_trie_root,
+      logs_bloom: <<0::2048>>,
+      difficulty: 1,
+      number: 0,
+      gas_limit: 25_000_000,
+      gas_used: 0,
+      timestamp: 1_695_902_400,
+      extra_data: @holesky_extra_data,
+      mix_hash: @zero_hash,
+      nonce: <<0::64>>
+    }
+  end
+
   @doc "Returns the genesis block header for the given network."
   @spec header(atom()) :: BlockHeader.t()
   def header(:mainnet), do: mainnet_header()
   def header(:sepolia), do: sepolia_header()
+  def header(:holesky), do: holesky_header()
 
   @doc "Returns the mainnet genesis block."
   @spec mainnet_block() :: Block.t()
@@ -112,10 +144,22 @@ defmodule EthStorage.Genesis do
     }
   end
 
+  @doc "Returns the Holesky genesis block."
+  @spec holesky_block() :: Block.t()
+  def holesky_block do
+    %Block{
+      header: holesky_header(),
+      transactions: [],
+      ommers: [],
+      withdrawals: nil
+    }
+  end
+
   @doc "Returns the genesis block for the given network."
   @spec block(atom()) :: Block.t()
   def block(:mainnet), do: mainnet_block()
   def block(:sepolia), do: sepolia_block()
+  def block(:holesky), do: holesky_block()
 
   @doc "Returns the hash of the mainnet genesis block."
   @spec mainnet_genesis_hash() :: <<_::256>>
@@ -129,10 +173,17 @@ defmodule EthStorage.Genesis do
     Encoding.block_hash(sepolia_header())
   end
 
+  @doc "Returns the hash of the Holesky genesis block."
+  @spec holesky_genesis_hash() :: <<_::256>>
+  def holesky_genesis_hash do
+    Encoding.block_hash(holesky_header())
+  end
+
   @doc "Returns the genesis hash for the given network."
   @spec genesis_hash(atom()) :: <<_::256>>
   def genesis_hash(:mainnet), do: mainnet_genesis_hash()
   def genesis_hash(:sepolia), do: sepolia_genesis_hash()
+  def genesis_hash(:holesky), do: holesky_genesis_hash()
 
   @doc """
   Initializes the store with the genesis block.

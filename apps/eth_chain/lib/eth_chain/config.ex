@@ -2,7 +2,7 @@ defmodule EthChain.Config do
   @moduledoc "Runtime configuration for the execution client."
 
   @type t :: %__MODULE__{
-          network: :mainnet | :sepolia,
+          network: :mainnet | :sepolia | :holesky,
           chain_id: non_neg_integer(),
           network_id: non_neg_integer(),
           datadir: String.t(),
@@ -33,8 +33,8 @@ defmodule EthChain.Config do
   Supported keys: `:network`, `:chain_id`, `:network_id`, `:datadir`, `:port` (P2P),
   `:rpc_port`, `:rpc`, `:max_peers`, `:evm_module`, `:bootnodes`.
 
-  When `:network` is set to `:sepolia`, the chain_id, network_id, and bootnodes
-  default to Sepolia values unless explicitly overridden.
+  When `:network` is set to `:sepolia` or `:holesky`, the chain_id, network_id,
+  and bootnodes default to the respective testnet values unless explicitly overridden.
   """
   @spec from_env(keyword()) :: t()
   def from_env(overrides \\ []) do
@@ -71,6 +71,17 @@ defmodule EthChain.Config do
     }
   end
 
+  @doc "Returns the default Holesky testnet configuration."
+  @spec holesky() :: t()
+  def holesky do
+    %__MODULE__{
+      network: :holesky,
+      chain_id: 17_000,
+      network_id: 17_000,
+      bootnodes: apply(EthNet.Chain, :bootnodes, [:holesky])
+    }
+  end
+
   @spec get_override(keyword(), atom(), term()) :: term()
   defp get_override(overrides, key, default) do
     Keyword.get(
@@ -90,6 +101,14 @@ defmodule EthChain.Config do
       chain_id: 11_155_111,
       network_id: 11_155_111,
       bootnodes: apply(EthNet.Chain, :bootnodes, [:sepolia])
+    }
+  end
+
+  defp network_defaults(:holesky) do
+    %{
+      chain_id: 17_000,
+      network_id: 17_000,
+      bootnodes: apply(EthNet.Chain, :bootnodes, [:holesky])
     }
   end
 

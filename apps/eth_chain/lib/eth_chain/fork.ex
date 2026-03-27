@@ -55,6 +55,14 @@ defmodule EthChain.Fork do
     {:paris, :block, 0}
   ]
 
+  # Holesky fork activation (post-merge from genesis, only timestamp forks)
+  @holesky_fork_blocks [
+    {:prague, :timestamp, 1_740_434_112},
+    {:cancun, :timestamp, 1_707_305_664},
+    {:shanghai, :timestamp, 1_696_000_704},
+    {:paris, :block, 0}
+  ]
+
   @doc """
   Determines the active fork at a given block number and timestamp.
 
@@ -90,6 +98,7 @@ defmodule EthChain.Fork do
   @spec fork_schedule(atom()) :: [{atom(), atom(), non_neg_integer()}]
   def fork_schedule(:mainnet), do: @mainnet_fork_blocks
   def fork_schedule(:sepolia), do: @sepolia_fork_blocks
+  def fork_schedule(:holesky), do: @holesky_fork_blocks
   def fork_schedule(_), do: @mainnet_fork_blocks
 
   @doc "Returns true if the fork supports EIP-1559 (London and later)."

@@ -1,6 +1,6 @@
 defmodule EthNet.Chain do
   @moduledoc """
-  Ethereum chain constants for mainnet and Sepolia testnet.
+  Ethereum chain constants for mainnet, Sepolia, and Holesky testnets.
   Genesis hash, network ID, fork schedule, terminal total difficulty, and bootnodes.
   """
 
@@ -72,37 +72,71 @@ defmodule EthNet.Chain do
     "enode://ec66ddcf1a974950bd4c782789a7e04f8aa7110a72569b6e65fcd51e937e74eed303b1ea734e4d19cfaec9fbff9b6ee65bf31dcb50ba79acce9dd63a6aca61c7@52.14.151.177:30303"
   ]
 
+  # --- Holesky testnet ---
+
+  @holesky_genesis_hash Base.decode16!(
+                          "B5F7F912443C940F21FD98071C45F5F2AF38E5F40E2C6574C6D233F0505B88F2",
+                          case: :upper
+                        )
+  @holesky_network_id 17_000
+
+  # Holesky is PoS from genesis (no PoW transition)
+  @holesky_terminal_td 0
+
+  # Holesky had no pre-merge block-based forks (launched post-Merge)
+  @holesky_block_forks []
+
+  # Post-merge forks use timestamps
+  @holesky_time_forks [
+    {:shanghai, 1_696_000_704},
+    {:cancun, 1_707_305_664},
+    {:prague, 1_740_434_112}
+  ]
+
+  # Official Holesky bootnodes (Ethereum Foundation)
+  @holesky_bootnodes [
+    "enode://ac906289e4b7f12df423d654c5a962b6ebe5b3a74cc9e06571c0bf024bc56e1b0a72e3d23b6c4e6ff0c47b9d78a4e6be2add6b1fcb0e49e3f2e15aae20b76a96@18.138.108.67:30303",
+    "enode://a3435a0155a3e837c02f5e7f53571c965eed2a2702652038d2845e820e465df93a29af3827e27d5b57c8f0f0eda48f693e986ab44f10d582e9d3f0d65e93dcaf@95.217.233.99:30303",
+    "enode://5d0ce3237ff02ece3d838e081a42bab21e174689e6cffbd6bfeadbb0e6bdf48bcf4f1f76dab0c7f08f2e2e5fd4e0e79c8e49dd6a225eaff0b6b7bc3523b319b4@65.109.20.113:30303"
+  ]
+
   # --- Public API ---
 
   @doc "Returns the genesis hash for the given network."
   @spec genesis_hash(atom()) :: <<_::256>>
   def genesis_hash(:mainnet), do: @mainnet_genesis_hash
   def genesis_hash(:sepolia), do: @sepolia_genesis_hash
+  def genesis_hash(:holesky), do: @holesky_genesis_hash
 
   @doc "Returns the network ID for the given network."
   @spec network_id(atom()) :: non_neg_integer()
   def network_id(:mainnet), do: @mainnet_network_id
   def network_id(:sepolia), do: @sepolia_network_id
+  def network_id(:holesky), do: @holesky_network_id
 
   @doc "Returns the terminal total difficulty for the given network."
   @spec terminal_td(atom()) :: non_neg_integer()
   def terminal_td(:mainnet), do: @mainnet_terminal_td
   def terminal_td(:sepolia), do: @sepolia_terminal_td
+  def terminal_td(:holesky), do: @holesky_terminal_td
 
   @doc "Returns the block-based fork schedule for the given network."
   @spec block_forks(atom()) :: [{atom(), non_neg_integer()}]
   def block_forks(:mainnet), do: @mainnet_block_forks
   def block_forks(:sepolia), do: @sepolia_block_forks
+  def block_forks(:holesky), do: @holesky_block_forks
 
   @doc "Returns the timestamp-based fork schedule for the given network."
   @spec time_forks(atom()) :: [{atom(), non_neg_integer()}]
   def time_forks(:mainnet), do: @mainnet_time_forks
   def time_forks(:sepolia), do: @sepolia_time_forks
+  def time_forks(:holesky), do: @holesky_time_forks
 
   @doc "Returns the bootnode enode URLs for the given network."
   @spec bootnodes(atom()) :: [String.t()]
   def bootnodes(:mainnet), do: @mainnet_bootnodes
   def bootnodes(:sepolia), do: @sepolia_bootnodes
+  def bootnodes(:holesky), do: @holesky_bootnodes
 
   @doc "Returns all fork values in order: block-based then timestamp-based."
   @spec all_fork_values(atom()) :: {[non_neg_integer()], [non_neg_integer()]}

@@ -1,21 +1,11 @@
 # EthCrypto
 
-**TODO: Add description**
+Cryptographic primitives for the ex_ethclient execution client.
 
-## Installation
+Wraps Keccak-256 hashing, secp256k1 signature operations, and ECIES encryption used by the Ethereum networking and signing layers.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `eth_crypto` to your list of dependencies in `mix.exs`:
+## Key Modules
 
-```elixir
-def deps do
-  [
-    {:eth_crypto, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/eth_crypto>.
-
+- `EthCrypto.Hash` - Keccak-256 hashing (via `ex_keccak` NIF)
+- `EthCrypto.Signature` - secp256k1 sign/verify/recover (via `ex_secp256k1` NIF)
+- `EthCrypto.ECIES` - Elliptic Curve Integrated Encryption Scheme for RLPx handshake

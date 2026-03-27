@@ -1,21 +1,17 @@
 # EthRpc
 
-**TODO: Add description**
+JSON-RPC 2.0 server for the ex_ethclient execution client.
 
-## Installation
+Exposes the standard Ethereum JSON-RPC API via HTTP (Bandit + Plug). Supports `eth_*`, `net_*`, `web3_*`, `debug_*`, `admin_*`, `txpool_*` namespaces, and the Engine API (`engine_*`) for consensus layer communication with JWT authentication.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `eth_rpc` to your list of dependencies in `mix.exs`:
+## Key Modules
 
-```elixir
-def deps do
-  [
-    {:eth_rpc, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/eth_rpc>.
-
+- `EthRpc.Eth` - `eth_*` namespace (blocks, transactions, accounts, logs, filters)
+- `EthRpc.Engine` - Engine API for beacon chain integration (newPayload, forkchoiceUpdated)
+- `EthRpc.Debug` - `debug_*` namespace (tracing, raw blocks/receipts)
+- `EthRpc.Admin` - `admin_*` namespace (node info, peers)
+- `EthRpc.Txpool` - `txpool_*` namespace (mempool inspection)
+- `EthRpc.FilterManager` - Log/block/pending tx filter management
+- `EthRpc.Metrics` - Telemetry/Prometheus metrics and `/metrics` endpoint
+- `EthRpc.JwtAuth` - JWT authentication for Engine API
+- `EthRpc.Formatters` - Hex encoding for JSON-RPC responses

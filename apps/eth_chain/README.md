@@ -1,21 +1,20 @@
 # EthChain
 
-**TODO: Add description**
+Chain logic and block validation for the ex_ethclient execution client.
 
-## Installation
+Implements block/transaction validation, gas calculation, base fee computation (EIP-1559), fork management, transaction mempool, block execution pipeline, and graceful shutdown. Serves as the orchestration layer connecting storage, EVM, and networking.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `eth_chain` to your list of dependencies in `mix.exs`:
+## Key Modules
 
-```elixir
-def deps do
-  [
-    {:eth_chain, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/eth_chain>.
-
+- `EthChain.BlockValidator` - Block header and body validation
+- `EthChain.TxValidator` - Transaction validation (signature, nonce, gas, balance)
+- `EthChain.BlockPipeline` - End-to-end block processing pipeline
+- `EthChain.BlockExecutor` - Block execution with EVM integration
+- `EthChain.BaseFee` - EIP-1559 base fee calculation
+- `EthChain.Gas` - Intrinsic gas computation
+- `EthChain.Fork` - Fork schedule and feature detection
+- `EthChain.Config` - Chain configuration (mainnet, Sepolia, Holesky)
+- `EthChain.Mempool` - Transaction pool management
+- `EthChain.PayloadBuilder` - Block payload construction for Engine API
+- `EthChain.ShutdownManager` - Graceful shutdown coordination
+- `EthChain.BeaconFetcher` - Beacon chain head block fetching

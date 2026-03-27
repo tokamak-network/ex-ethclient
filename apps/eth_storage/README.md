@@ -1,21 +1,17 @@
 # EthStorage
 
-**TODO: Add description**
+Storage layer for the ex_ethclient execution client.
 
-## Installation
+Provides a behaviour-based storage backend with pluggable implementations (in-memory ETS, DETS, RocksDB NIF). Includes Merkle Patricia Trie (MPT), genesis state initialization, state pruning with reference counting, and block/account/receipt storage.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `eth_storage` to your list of dependencies in `mix.exs`:
+## Key Modules
 
-```elixir
-def deps do
-  [
-    {:eth_storage, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/eth_storage>.
-
+- `EthStorage.Store` - Primary GenServer coordinating all storage operations
+- `EthStorage.Backend` - Storage backend behaviour
+- `EthStorage.Backend.Memory` - ETS-based in-memory backend (testing)
+- `EthStorage.Backend.DETS` - DETS-based persistent backend
+- `EthStorage.Backend.RocksDB` - RocksDB NIF backend (production)
+- `EthStorage.MPT.Trie` - Merkle Patricia Trie implementation
+- `EthStorage.Pruner` - State pruning with reference counting
+- `EthStorage.Genesis` - Genesis block and state initialization
+- `EthStorage.AccountRLP` - Account RLP encoding/decoding

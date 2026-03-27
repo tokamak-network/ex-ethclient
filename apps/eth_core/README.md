@@ -1,21 +1,14 @@
 # EthCore
 
-**TODO: Add description**
+Core Ethereum types and encoding for the ex_ethclient execution client.
 
-## Installation
+Provides fundamental data structures (`Address`, `Hash`, `Block`, `BlockHeader`, `Transaction`, `Account`, `Receipt`, `Log`, `Withdrawal`, `Authorization`, `Bloom`) along with RLP encoding/decoding and transaction signing (EIP-155, EIP-2930, EIP-1559, EIP-4844, EIP-7702).
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `eth_core` to your list of dependencies in `mix.exs`:
+## Key Modules
 
-```elixir
-def deps do
-  [
-    {:eth_core, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/eth_core>.
-
+- `EthCore.Types.Address` - 20-byte Ethereum address with EIP-55 checksum support
+- `EthCore.Types.Hash` - 32-byte Keccak-256 hash
+- `EthCore.Types.Transaction` - All transaction types (Legacy, EIP-2930, EIP-1559, EIP-4844, EIP-7702)
+- `EthCore.Types.Block` / `EthCore.Types.BlockHeader` - Block and header structures
+- `EthCore.RLP` - RLP encoding/decoding for all Ethereum types
+- `EthCore.Transaction.Signer` - Transaction signing and sender recovery

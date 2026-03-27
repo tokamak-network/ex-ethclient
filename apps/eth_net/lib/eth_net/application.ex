@@ -8,58 +8,29 @@ defmodule EthNet.Application do
     children =
       if Application.get_env(:eth_net, :start_services, true) do
         port = Application.get_env(:eth_net, :port, 30303)
+        discv5_port = Application.get_env(:eth_net, :discv5_port, 30304)
         datadir = Application.get_env(:eth_net, :datadir, "./data")
         chain = Application.get_env(:eth_net, :chain, :mainnet)
+        start_discv5 = Application.get_env(:eth_net, :start_discv5, false)
 
-        [
+        base = [
           {EthNet.NodeKey, datadir: datadir},
           {EthNet.DiscV4.Server, port: port, chain: chain},
           {EthNet.Peer.Scorer, []},
           {EthNet.Peer.ConnectionSupervisor, []},
           {EthNet.Peer.Manager, []}
         ]
+
+        if start_discv5 do
+          base ++ [{EthNet.DiscV5.Server, port: discv5_port}]
+        else
+          base
+        end
       else
         []
       end
 
     opts = [strategy: :rest_for_one, name: EthNet.Supervisor]
     Supervisor.start_link(children, opts)
-  end
-
-  @doc """
-  Called before the application stops.
-
-  Disconnects all peers gracefully by terminating connections in the
-  DynamicSupervisor, allowing each connection to send a P2P disconnect message.
-  """
-  @impl true
-  @spec prep_stop(term()) :: term()
-  def prep_stop(state) do
-    if Application.get_env(:eth_net, :start_services, true) do
-      case Process.whereis(EthNet.Peer.ConnectionSupervisor) do
-        nil ->
-          :ok
-
-        _pid ->
-          try do
-            children = DynamicSupervisor.which_children(EthNet.Peer.ConnectionSupervisor)
-
-            Enum.each(children, fn {:undefined, child_pid, _type, _modules} ->
-              if is_pid(child_pid) do
-                DynamicSupervisor.terminate_child(
-                  EthNet.Peer.ConnectionSupervisor,
-                  child_pid
-                )
-              end
-            end)
-          rescue
-            _ -> :ok
-          catch
-            :exit, _ -> :ok
-          end
-      end
-    end
-
-    state
   end
 end

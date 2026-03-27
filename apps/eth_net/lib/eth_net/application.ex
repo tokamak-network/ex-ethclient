@@ -12,6 +12,9 @@ defmodule EthNet.Application do
         datadir = Application.get_env(:eth_net, :datadir, "./data")
         chain = Application.get_env(:eth_net, :chain, :mainnet)
         start_discv5 = Application.get_env(:eth_net, :start_discv5, false)
+        dns_discovery = Application.get_env(:eth_net, :dns_discovery, false)
+        dns_seeds = Application.get_env(:eth_net, :dns_seeds, [])
+        dns_sync_interval = Application.get_env(:eth_net, :dns_sync_interval, 1_800_000)
 
         base = [
           {EthNet.NodeKey, datadir: datadir},
@@ -21,8 +24,16 @@ defmodule EthNet.Application do
           {EthNet.Peer.Manager, []}
         ]
 
-        if start_discv5 do
-          base ++ [{EthNet.DiscV5.Server, port: discv5_port}]
+        base =
+          if start_discv5 do
+            base ++ [{EthNet.DiscV5.Server, port: discv5_port}]
+          else
+            base
+          end
+
+        if dns_discovery do
+          dns_opts = [seeds: dns_seeds, sync_interval: dns_sync_interval]
+          base ++ [{EthNet.DNS.Resolver, dns_opts}]
         else
           base
         end

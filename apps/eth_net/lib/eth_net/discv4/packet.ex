@@ -19,6 +19,7 @@ defmodule EthNet.DiscV4.Packet do
   # --- Encoding ---
 
   @doc "Encodes a PING packet."
+  @spec encode_ping(:inet.ip_address(), non_neg_integer(), non_neg_integer(), :inet.ip_address(), non_neg_integer(), non_neg_integer(), binary()) :: {:ok, binary()}
   def encode_ping(from_ip, from_udp, from_tcp, to_ip, to_udp, to_tcp, private_key) do
     expiration = expiration_timestamp()
 
@@ -34,6 +35,7 @@ defmodule EthNet.DiscV4.Packet do
   end
 
   @doc "Encodes a PONG packet."
+  @spec encode_pong(:inet.ip_address(), non_neg_integer(), non_neg_integer(), binary(), binary()) :: {:ok, binary()}
   def encode_pong(to_ip, to_udp, to_tcp, ping_hash, private_key) do
     expiration = expiration_timestamp()
 
@@ -48,6 +50,7 @@ defmodule EthNet.DiscV4.Packet do
   end
 
   @doc "Encodes a FINDNODE packet."
+  @spec encode_findnode(binary(), binary()) :: {:ok, binary()}
   def encode_findnode(target_id, private_key) do
     expiration = expiration_timestamp()
 
@@ -61,6 +64,7 @@ defmodule EthNet.DiscV4.Packet do
   end
 
   @doc "Encodes a NEIGHBOURS packet."
+  @spec encode_neighbours([EthNet.DiscV4.Node.t()], binary()) :: {:ok, binary()}
   def encode_neighbours(nodes, private_key) do
     expiration = expiration_timestamp()
 
@@ -85,6 +89,7 @@ defmodule EthNet.DiscV4.Packet do
   @doc """
   Decodes a DiscV4 packet, returning `{:ok, {type, data, node_id, hash}}` or `{:error, reason}`.
   """
+  @spec decode(binary()) :: {:ok, {atom(), map(), binary(), binary()}} | {:error, term()}
   def decode(
         <<hash::binary-size(32), sig_r::binary-size(32), sig_s::binary-size(32), recovery_id,
           type, rlp_data::binary>>

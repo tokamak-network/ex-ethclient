@@ -55,6 +55,7 @@ defmodule EthNet.Protocol.P2P do
   end
 
   @doc "Encodes a Disconnect message."
+  @spec encode_disconnect(atom() | non_neg_integer()) :: {non_neg_integer(), binary()}
   def encode_disconnect(reason \\ :requested) do
     code = reason_to_code(reason)
     payload = ExRLP.encode([code])
@@ -62,11 +63,13 @@ defmodule EthNet.Protocol.P2P do
   end
 
   @doc "Encodes a Ping message."
+  @spec encode_ping() :: {non_neg_integer(), binary()}
   def encode_ping do
     {@ping_code, ExRLP.encode([])}
   end
 
   @doc "Encodes a Pong message."
+  @spec encode_pong() :: {non_neg_integer(), binary()}
   def encode_pong do
     {@pong_code, ExRLP.encode([])}
   end
@@ -74,6 +77,7 @@ defmodule EthNet.Protocol.P2P do
   # --- Decoding ---
 
   @doc "Decodes a P2P message by code."
+  @spec decode(non_neg_integer(), binary()) :: {:hello, map()} | {:disconnect, atom() | {:unknown, non_neg_integer()}} | :ping | :pong | {:unknown_p2p, non_neg_integer()}
   def decode(@hello_code, payload) do
     [version, client_id, capabilities, listen_port, node_id | _] = ExRLP.decode(payload)
 
@@ -108,12 +112,23 @@ defmodule EthNet.Protocol.P2P do
   def decode(code, _payload), do: {:unknown_p2p, code}
 
   @doc "Returns true if the message code is a P2P base protocol message."
+  @spec p2p_message?(non_neg_integer()) :: boolean()
   def p2p_message?(code), do: code in [@hello_code, @disconnect_code, @ping_code, @pong_code]
 
-  @doc "Message code constants."
+  @doc "Returns the Hello message code (0x00)."
+  @spec hello_code() :: non_neg_integer()
   def hello_code, do: @hello_code
+
+  @doc "Returns the Disconnect message code (0x01)."
+  @spec disconnect_code() :: non_neg_integer()
   def disconnect_code, do: @disconnect_code
+
+  @doc "Returns the Ping message code (0x02)."
+  @spec ping_code() :: non_neg_integer()
   def ping_code, do: @ping_code
+
+  @doc "Returns the Pong message code (0x03)."
+  @spec pong_code() :: non_neg_integer()
   def pong_code, do: @pong_code
 
   defp reason_to_code(:requested), do: 0x00

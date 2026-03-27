@@ -25,14 +25,18 @@ defmodule EthNet.DiscV4.Server do
     pending_pings: %{}
   ]
 
+  @doc "Starts the DiscV4 UDP discovery server."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc "Returns the current routing table size."
+  @spec table_size() :: non_neg_integer()
   def table_size, do: GenServer.call(__MODULE__, :table_size)
 
   @doc "Returns known peers."
+  @spec peers() :: [EthNet.DiscV4.Node.t()]
   def peers, do: GenServer.call(__MODULE__, :peers)
 
   # --- Server callbacks ---

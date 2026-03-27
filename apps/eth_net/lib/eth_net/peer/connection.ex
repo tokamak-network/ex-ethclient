@@ -42,11 +42,14 @@ defmodule EthNet.Peer.Connection do
     buffer: <<>>
   ]
 
+  @doc "Starts a connection process for the given peer options."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
   end
 
   @doc "Returns the connection state."
+  @spec info(pid()) :: map()
   def info(pid), do: GenServer.call(pid, :info)
 
   # --- Server callbacks ---

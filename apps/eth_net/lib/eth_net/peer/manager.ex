@@ -25,14 +25,18 @@ defmodule EthNet.Peer.Manager do
             max_peers: @max_peers,
             failed_peers: %{}
 
+  @doc "Starts the peer manager GenServer."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc "Returns the number of connected peers."
+  @spec connected_count() :: non_neg_integer()
   def connected_count, do: GenServer.call(__MODULE__, :connected_count)
 
   @doc "Returns info about all connected peers."
+  @spec connected_peers() :: [map()]
   def connected_peers, do: GenServer.call(__MODULE__, :connected_peers)
 
   # --- Server callbacks ---

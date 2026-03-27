@@ -10,20 +10,26 @@ defmodule EthNet.NodeKey do
 
   require Logger
 
+  @doc "Starts the NodeKey GenServer."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc "Returns the 32-byte private key."
+  @spec private_key() :: <<_::256>>
   def private_key, do: GenServer.call(__MODULE__, :private_key)
 
   @doc "Returns the 64-byte uncompressed public key."
+  @spec public_key() :: <<_::512>>
   def public_key, do: GenServer.call(__MODULE__, :public_key)
 
   @doc "Returns the 64-byte node ID (same as public key)."
+  @spec node_id() :: <<_::512>>
   def node_id, do: GenServer.call(__MODULE__, :node_id)
 
   @doc "Returns the enode URL string."
+  @spec enode_url(String.t(), non_neg_integer()) :: String.t()
   def enode_url(ip \\ "0.0.0.0", port \\ 30303) do
     id = node_id()
     "enode://#{Base.encode16(id, case: :lower)}@#{ip}:#{port}"

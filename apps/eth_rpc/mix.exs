@@ -34,9 +34,13 @@ defmodule EthRpc.MixProject do
       {:eth_crypto, in_umbrella: true},
       {:eth_storage, in_umbrella: true},
       {:eth_chain, in_umbrella: true},
+      {:eth_net, in_umbrella: true},
       {:bandit, "~> 1.6"},
       {:plug, "~> 1.16"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:telemetry, "~> 1.0"},
+      {:telemetry_metrics, "~> 1.0"},
+      {:telemetry_poller, "~> 1.0"}
     ]
   end
 end

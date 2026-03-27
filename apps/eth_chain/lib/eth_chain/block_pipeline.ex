@@ -29,6 +29,7 @@ defmodule EthChain.BlockPipeline do
           {:ok, <<_::256>>} | {:error, term()}
   def process_block(%Block{} = block, store \\ Store, opts \\ []) do
     mempool = Keyword.get(opts, :mempool)
+    start_time = System.monotonic_time()
 
     with {:ok, parent_header} <- fetch_parent_header(block, store),
          {:ok, result} <- Chain.process_block(block, parent_header, opts),
@@ -38,11 +39,20 @@ defmodule EthChain.BlockPipeline do
          :ok <- Store.set_latest_block_number(store, block.header.number) do
       if mempool, do: Mempool.remove_block_transactions(block, mempool)
 
+      duration = System.monotonic_time() - start_time
+      tx_count = length(block.transactions)
+
+      :telemetry.execute(
+        [:eth, :block, :processed],
+        %{duration: duration},
+        %{block_number: block.header.number, tx_count: tx_count}
+      )
+
       try do
         apply(EthDashboard.Collector, :report_block, [
           block.header.number,
           block_hash,
-          length(block.transactions),
+          tx_count,
           block.header.gas_used
         ])
       catch

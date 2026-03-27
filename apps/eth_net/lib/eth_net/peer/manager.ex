@@ -58,6 +58,13 @@ defmodule EthNet.Peer.Manager do
     ref = Process.monitor(pid)
     connected = Map.put(state.connected, pid, %{ref: ref, node_id: node_id, status: status})
     connecting = MapSet.delete(state.connecting, node_id)
+
+    :telemetry.execute(
+      [:eth, :peer, :connected],
+      %{count: map_size(connected)},
+      %{node_id: node_id}
+    )
+
     {:noreply, %{state | connected: connected, connecting: connecting}}
   end
 
@@ -83,6 +90,12 @@ defmodule EthNet.Peer.Manager do
       end
 
     Logger.info("PeerManager: Peer disconnected (#{map_size(connected)} active)")
+
+    :telemetry.execute(
+      [:eth, :peer, :disconnected],
+      %{count: map_size(connected)},
+      %{node_id: node_id}
+    )
 
     state = %{state | connected: connected, failed_peers: failed_peers}
 

@@ -27,7 +27,8 @@ defmodule EthChain.MixProject do
       {:eth_core, in_umbrella: true},
       {:eth_crypto, in_umbrella: true},
       {:eth_vm, in_umbrella: true},
-      {:eth_storage, in_umbrella: true}
+      {:eth_storage, in_umbrella: true},
+      {:telemetry, "~> 1.0"}
     ]
   end
 end

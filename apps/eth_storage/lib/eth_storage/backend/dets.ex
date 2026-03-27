@@ -106,6 +106,14 @@ defmodule EthStorage.Backend.DETS do
     :ok
   end
 
+  @impl true
+  @spec count(map(), atom()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def count(state, table) do
+    with {:ok, tab} <- lookup_table(state, table) do
+      {:ok, :dets.info(tab, :size)}
+    end
+  end
+
   @doc "Closes all DETS tables."
   @spec close(map()) :: :ok
   def close(%{tables: tables}) do

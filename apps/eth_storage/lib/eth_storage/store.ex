@@ -213,6 +213,18 @@ defmodule EthStorage.Store do
     )
   end
 
+  @doc "Deletes a key from a table."
+  @spec delete(GenServer.server(), atom(), binary()) :: :ok | {:error, term()}
+  def delete(server \\ __MODULE__, table, key) do
+    GenServer.call(server, {:delete, table, key})
+  end
+
+  @doc "Returns the number of entries in a table (backend-dependent)."
+  @spec count(GenServer.server(), atom()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def count(server \\ __MODULE__, table) do
+    GenServer.call(server, {:count, table})
+  end
+
   @doc """
   Flushes any buffered writes to persistent storage.
 
@@ -268,6 +280,25 @@ defmodule EthStorage.Store do
   end
 
   @impl true
+  def handle_call({:delete, table, key}, _from, state) do
+    %{backend: backend, backend_state: backend_state} = state
+
+    case backend.delete(backend_state, table, key) do
+      {:ok, new_backend_state} ->
+        {:reply, :ok, %{state | backend_state: new_backend_state}}
+
+      {:error, _} = err ->
+        {:reply, err, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:count, table}, _from, state) do
+    %{backend: backend, backend_state: backend_state} = state
+    {:reply, do_count(backend, backend_state, table), state}
+  end
+
+  @impl true
   def handle_call(:flush, _from, state) do
     %{backend: backend, backend_state: backend_state} = state
     result = do_flush(backend, backend_state)
@@ -301,6 +332,15 @@ defmodule EthStorage.Store do
     %{backend: backend, backend_state: backend_state} = state
     do_flush(backend, backend_state)
     :ok
+  end
+
+  @spec do_count(module(), term(), atom()) :: {:ok, non_neg_integer()} | {:error, term()}
+  defp do_count(backend, backend_state, table) do
+    if function_exported?(backend, :count, 2) do
+      backend.count(backend_state, table)
+    else
+      {:error, :not_supported}
+    end
   end
 
   @spec do_flush(module(), term()) :: :ok | {:error, term()}

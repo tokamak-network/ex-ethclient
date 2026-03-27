@@ -29,8 +29,12 @@ defmodule EthStorage.Backend do
   @callback batch_put(state :: term(), [{table(), key(), value()}]) ::
               {:ok, state :: term()} | {:error, term()}
 
+  @doc "Returns the number of entries in a table."
+  @callback count(state :: term(), table()) ::
+              {:ok, non_neg_integer()} | {:error, term()}
+
   @doc "Flushes any buffered writes to persistent storage. No-op for in-memory backends."
   @callback flush(state :: term()) :: :ok | {:error, term()}
 
-  @optional_callbacks flush: 1
+  @optional_callbacks flush: 1, count: 2
 end

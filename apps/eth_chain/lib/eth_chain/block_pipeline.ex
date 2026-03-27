@@ -38,6 +38,7 @@ defmodule EthChain.BlockPipeline do
          :ok <- index_transactions(block_hash, block, store),
          :ok <- Store.set_latest_block_number(store, block.header.number) do
       if mempool, do: Mempool.remove_block_transactions(block, mempool)
+      notify_pruner(block.header.number, block.header.state_root)
 
       duration = System.monotonic_time() - start_time
       tx_count = length(block.transactions)
@@ -177,4 +178,17 @@ defmodule EthChain.BlockPipeline do
   end
 
   defp fetch_parent_header(_, _store), do: {:error, :invalid_block}
+
+  @spec notify_pruner(non_neg_integer(), <<_::256>>) :: :ok
+  defp notify_pruner(block_number, state_root) do
+    if Application.get_env(:eth_storage, :pruning, false) do
+      try do
+        EthStorage.Pruner.notify_new_block(EthStorage.Pruner, block_number, state_root)
+      catch
+        _, _ -> :ok
+      end
+    end
+
+    :ok
+  end
 end

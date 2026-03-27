@@ -85,6 +85,14 @@ defmodule EthStorage.Backend.Memory do
     end
   end
 
+  @impl true
+  @spec count(map(), atom()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def count(state, table) do
+    with {:ok, tid} <- lookup_table(state, table) do
+      {:ok, :ets.info(tid, :size)}
+    end
+  end
+
   @spec lookup_table(map(), atom()) :: {:ok, :ets.table()} | {:error, :unknown_table}
   defp lookup_table(state, table) do
     case Map.fetch(state, table) do

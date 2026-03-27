@@ -15,10 +15,22 @@ defmodule EthStorage.Application do
         backend = Application.get_env(:eth_storage, :backend, EthStorage.Backend.Memory)
         backend_opts = Application.get_env(:eth_storage, :backend_opts, [])
 
-        [
+        store_child =
           {EthStorage.Store,
            [name: EthStorage.Store, backend: backend, backend_opts: backend_opts]}
-        ]
+
+        pruning_enabled = Application.get_env(:eth_storage, :pruning, false)
+        retain_blocks = Application.get_env(:eth_storage, :retain_blocks, 128)
+
+        if pruning_enabled do
+          [
+            store_child,
+            {EthStorage.Pruner,
+             [name: EthStorage.Pruner, retain_blocks: retain_blocks, store: EthStorage.Store]}
+          ]
+        else
+          [store_child]
+        end
       else
         []
       end

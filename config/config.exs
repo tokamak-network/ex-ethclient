@@ -6,7 +6,9 @@ config :logger, :console,
 
 config :eth_storage,
   backend: EthStorage.Backend.Memory,
-  backend_opts: []
+  backend_opts: [],
+  pruning: false,
+  retain_blocks: 128
 
 config :eth_dashboard,
   port: 4000,

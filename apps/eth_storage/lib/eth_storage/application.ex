@@ -33,6 +33,33 @@ defmodule EthStorage.Application do
     result
   end
 
+  @doc """
+  Called before the application stops.
+
+  Flushes any buffered storage writes to ensure data integrity on shutdown.
+  """
+  @impl true
+  @spec prep_stop(term()) :: term()
+  def prep_stop(state) do
+    if Application.get_env(:eth_storage, :start_services, true) do
+      case Process.whereis(EthStorage.Store) do
+        nil ->
+          :ok
+
+        _pid ->
+          try do
+            EthStorage.Store.flush()
+          rescue
+            _ -> :ok
+          catch
+            :exit, _ -> :ok
+          end
+      end
+    end
+
+    state
+  end
+
   @spec initialize_genesis() :: :ok | {:error, term()}
   defp initialize_genesis do
     case EthStorage.BlockStore.latest_block_number(EthStorage.Store) do

@@ -28,4 +28,9 @@ defmodule EthStorage.Backend do
   @doc "Puts multiple key-value pairs atomically."
   @callback batch_put(state :: term(), [{table(), key(), value()}]) ::
               {:ok, state :: term()} | {:error, term()}
+
+  @doc "Flushes any buffered writes to persistent storage. No-op for in-memory backends."
+  @callback flush(state :: term()) :: :ok | {:error, term()}
+
+  @optional_callbacks flush: 1
 end

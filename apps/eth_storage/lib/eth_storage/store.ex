@@ -213,6 +213,17 @@ defmodule EthStorage.Store do
     )
   end
 
+  @doc """
+  Flushes any buffered writes to persistent storage.
+
+  For backends that support flushing (DETS, RocksDB), ensures all data
+  is persisted to disk. No-op for in-memory backends.
+  """
+  @spec flush(GenServer.server()) :: :ok | {:error, term()}
+  def flush(server \\ __MODULE__) do
+    GenServer.call(server, :flush)
+  end
+
   # --- GenServer Callbacks ---
 
   @impl true
@@ -257,6 +268,13 @@ defmodule EthStorage.Store do
   end
 
   @impl true
+  def handle_call(:flush, _from, state) do
+    %{backend: backend, backend_state: backend_state} = state
+    result = do_flush(backend, backend_state)
+    {:reply, result, state}
+  end
+
+  @impl true
   def handle_call({:get_block_by_number, number}, _from, state) do
     %{backend: backend, backend_state: bs} = state
 
@@ -276,6 +294,22 @@ defmodule EthStorage.Store do
       end
 
     {:reply, result, state}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    %{backend: backend, backend_state: backend_state} = state
+    do_flush(backend, backend_state)
+    :ok
+  end
+
+  @spec do_flush(module(), term()) :: :ok | {:error, term()}
+  defp do_flush(backend, backend_state) do
+    if function_exported?(backend, :flush, 1) do
+      backend.flush(backend_state)
+    else
+      :ok
+    end
   end
 
   @spec encode_number(non_neg_integer()) :: binary()

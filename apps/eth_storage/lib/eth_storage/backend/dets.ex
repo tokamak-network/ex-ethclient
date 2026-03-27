@@ -98,6 +98,14 @@ defmodule EthStorage.Backend.DETS do
     end
   end
 
+  @impl true
+  @doc "Syncs all DETS tables to disk."
+  @spec flush(map()) :: :ok
+  def flush(%{tables: tables}) do
+    Enum.each(tables, fn {_name, tab} -> :dets.sync(tab) end)
+    :ok
+  end
+
   @doc "Closes all DETS tables."
   @spec close(map()) :: :ok
   def close(%{tables: tables}) do

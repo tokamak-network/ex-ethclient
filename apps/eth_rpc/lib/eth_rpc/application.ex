@@ -40,4 +40,39 @@ defmodule EthRpc.Application do
     opts = [strategy: :one_for_one, name: EthRpc.Supervisor]
     Supervisor.start_link(children, opts)
   end
+
+  @doc """
+  Called before the application stops.
+
+  Drains in-flight RPC requests by stopping the Bandit HTTP servers first,
+  allowing any active connections to complete before termination.
+  """
+  @impl true
+  @spec prep_stop(term()) :: term()
+  def prep_stop(state) do
+    if Application.get_env(:eth_rpc, :start_server, true) do
+      case Process.whereis(EthRpc.Supervisor) do
+        nil ->
+          :ok
+
+        pid ->
+          try do
+            # Stop HTTP servers to reject new connections
+            Enum.each([:rpc_server, :engine_server], fn id ->
+              try do
+                Supervisor.terminate_child(pid, id)
+              rescue
+                _ -> :ok
+              catch
+                :exit, _ -> :ok
+              end
+            end)
+          rescue
+            _ -> :ok
+          end
+      end
+    end
+
+    state
+  end
 end
